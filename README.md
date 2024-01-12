@@ -16,7 +16,7 @@ One of the biggest challenges is getting enough security information (data) that
 
 Moreover whenever a security issue arise, the cases are rarely documented, some not involving the securty agencies who in turn fail to turn up in due time when the actual crime happens.
 
-OBJECTIVES
+**OBJECTIVES**
 There is need to properly document each security related issues in order to keep data that will be eventually be used whenever another issue arises.
 The crime data can be shared across multiple security agencies in order to track and trace crimes where they happen and at what exact location.
 Users can have the opportunity to register their bio data in order to use the platform.
