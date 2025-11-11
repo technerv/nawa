@@ -1,0 +1,119 @@
+html, body, #root {
+	height: 100%;
+}
+body {
+	margin: 0;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+	background: #fafafa;
+	color: #222;
+}
+input, select, button {
+	padding: 8px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+}
+button {
+	cursor: pointer;
+}
+table th, table td {
+	vertical-align: top;
+}
+
+/* Layout */
+header {
+	background: #fff;
+	border-bottom: 1px solid #e5e5e5;
+}
+header nav a {
+	color: #444;
+	text-decoration: none;
+	padding: 6px 10px;
+	border-radius: 6px;
+}
+header nav a:hover {
+	background: #f1f1f1;
+}
+
+/* Buttons */
+button, .btn {
+	background: #f7f7f7;
+	border: 1px solid #cfcfcf;
+	border-radius: 6px;
+	padding: 8px 12px;
+	line-height: 1;
+	transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.btn-primary, button[type="submit"] {
+	background: #2563eb;
+	border-color: #1e40af;
+	color: #fff;
+}
+.btn-primary:hover, button[type="submit"]:hover {
+	background: #1e40af;
+}
+button:disabled, .btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+/* Inputs */
+input, select, textarea {
+	background: #fff;
+	border: 1px solid #d1d5db;
+	border-radius: 6px;
+	padding: 8px 10px;
+	outline: none;
+}
+input:focus, select:focus, textarea:focus {
+	border-color: #2563eb;
+	box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+}
+label {
+	font-size: 12px;
+	color: #555;
+}
+
+/* Cards (simple containers) */
+.card {
+	background: #fff;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+	padding: 12px;
+}
+
+/* Tables */
+table {
+	width: 100%;
+	border-collapse: collapse;
+	background: #fff;
+	border: 1px solid #e5e7eb;
+	border-radius: 8px;
+	overflow: hidden;
+}
+thead th {
+	background: #f3f4f6;
+	color: #374151;
+	font-weight: 600;
+}
+th, td {
+	padding: 10px 12px;
+	border-top: 1px solid #f1f5f9;
+}
+tbody tr:hover {
+	background: #f9fafb;
+}
+
+/* Utility spacing */
+.row {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.mt-2 { margin-top: 8px; }
+.mt-3 { margin-top: 12px; }
+.mt-4 { margin-top: 16px; }
+.mb-2 { margin-bottom: 8px; }
+.mb-3 { margin-bottom: 12px; }
+.mb-4 { margin-bottom: 16px; }
+

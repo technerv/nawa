@@ -1,0 +1,19 @@
+# Role and group names for NAWA
+
+ROLE_SUPERADMIN = 'SuperAdmin'
+ROLE_ADMIN = 'Admin'
+ROLE_DISPATCHER = 'Dispatcher'
+ROLE_FIELD_OFFICER = 'FieldOfficer'
+ROLE_ANALYST = 'Analyst'
+ROLE_REPORTER = 'Reporter'
+
+ALL_ROLES = [
+	ROLE_SUPERADMIN,
+	ROLE_ADMIN,
+	ROLE_DISPATCHER,
+	ROLE_FIELD_OFFICER,
+	ROLE_ANALYST,
+	ROLE_REPORTER,
+]
+
+
