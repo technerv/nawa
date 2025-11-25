@@ -36,3 +36,106 @@ Nawa empowers communities to:
 ---
 
 ## 🧱 Project Structure    
+
+---
+
+## 🚀 Getting Started  
+
+### **Backend Setup**  
+```bash
+cd core
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+# Configure your environment variables (API keys, DB, etc.)
+python manage.py migrate
+python manage.py runserver
+
+cd frontend
+npm install
+cp .env.example .env
+# Add your backend URL, e.g.:
+# VITE_API_URL=http://127.0.0.1:8000/api
+npm run dev
+
+Access the app:
+Frontend: http://localhost:5173
+Backend API: http://127.0.0.1:8000/api
+
+DJANGO_SECRET_KEY=your_secret_key
+DEBUG=True
+DATABASE_URL=sqlite:///db.sqlite3
+AFRICASTALKING_USERNAME=sandbox
+AFRICASTALKING_API_KEY=your_api_key
+⚠️ Make sure .env files are in your .gitignore.
+
+VITE_API_URL=http://127.0.0.1:8000/api
+
+| Endpoint                    | Method | Description                           |
+| --------------------------- | ------ | ------------------------------------- |
+| `/api/reports/`             | GET    | List all incident reports             |
+| `/api/reports/`             | POST   | Create a new report                   |
+| `/api/users/register/`      | POST   | Register a new user                   |
+| `/api/users/login/`         | POST   | Log in and get token                  |
+| `/api/crimereportbook/map/` | GET    | Retrieve all reports with geolocation |
+
+🗺️ Map Integration
+
+Nawa uses Leaflet.js for displaying real-time reports on a map.
+Each report includes:
+
+Location name (auto-geocoded)
+
+Latitude/Longitude
+
+Type of incident
+
+Timestamp
+
+📤 Deployment
+1. Build frontend
+cd frontend
+npm run build
+
+2. Collect static files (Django)
+cd core
+python manage.py collectstatic
+
+3. Configure environment for production
+Set:
+DEBUG=False
+ALLOWED_HOSTS=yourdomain.com
+
+You can deploy:
+Backend: Render, Railway, or DigitalOcean
+Frontend: Netlify, Vercel, or GitHub Pages
+
+🧪 Testing
+python manage.py test
+
+Frontend tests:
+npm test
+
+🤝 Contributing
+1. Fork the repo
+2. Create a feature branch
+
+git checkout -b feature/add-map-layer
+
+3. Commit your changes
+git commit -m "Added Leaflet map integration"
+
+Push and create a Pull Request
+
+📄 License
+
+This project is licensed under the MIT License — see the LICENSE
+ file for details.
+
+👤 Author
+
+Evans Githinji
+CEO, TECHNERV
+📧 technervke@gmail.com
+🌐 https://technerv.github.io
