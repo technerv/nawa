@@ -29,10 +29,10 @@ export default function RegisterPage() {
 		<div style={{ maxWidth: 480, margin: '40px auto' }}>
 			<h2>Register</h2>
 			<form onSubmit={onSubmit} style={{ display: 'grid', gap: 8 }}>
-				<input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-				<input placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
-				<input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-				<select value={role} onChange={(e) => setRole(e.target.value)}>
+				<input name="username" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+				<input name="email" placeholder="Email (optional)" value={email} onChange={(e) => setEmail(e.target.value)} />
+				<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+				<select name="role" value={role} onChange={(e) => setRole(e.target.value)}>
 					{ROLES.map((r) => (
 						<option key={r} value={r}>
 							{r}
@@ -46,4 +46,3 @@ export default function RegisterPage() {
 		</div>
 	)
 }
-

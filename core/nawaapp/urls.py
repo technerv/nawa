@@ -11,10 +11,13 @@ router.register('crimereportbook', CrimeReportBookViewset)
 # router.register('crimereportbook/map/', CrimeReportBookViewset)
 router.register('crimewitness', CrimeWitnessViewset)
 router.register('alertevent', AlertEventViewSet)
+router.register('neighborhood', NeighborhoodViewSet)
 
 
 urlpatterns = [    
     path('api/', include(router.urls))
+    ,path('api/alerts/subscribe/', SubscribeAlertsView.as_view())
+    ,path('api/admin/users_roles/', UsersRolesView.as_view())
     # CRIME CATEGORY API ENDPOINTS
     # path('cc/', ListCrimeCategory.as_view()), # read
     # path('cc/create/', CreateCrimeCategory.as_view()), # create

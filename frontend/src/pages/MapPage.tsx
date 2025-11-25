@@ -1,8 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
-import { MapContainer, TileLayer, Marker, Popup, useMap } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, Tooltip, GeoJSON } from 'react-leaflet'
+import L from 'leaflet'
 import { useQuery } from '@tanstack/react-query'
 import { listCrimeReportMapPoints } from '../api/crime'
+import { API_BASE_URL } from '../api/axios'
+import { Link, useNavigate } from 'react-router-dom'
 import { defaultMarkerIcon } from '../lib/leafletIcons'
+import { listNeighborhoods, neighborhoodAlertCounts } from '../api/neighborhood'
+import { showToast } from '../lib/toast'
+import { normalizeCountyName } from '../lib/normalizeCounty'
 
 const DEFAULT_CENTER: [number, number] = [-1.286389, 36.817223] // Nairobi CBD
 const KENYA_BOUNDS: [[number, number], [number, number]] = [[-4.7, 33.9], [5.5, 41.9]]
@@ -11,15 +17,129 @@ export default function MapPage() {
 	const [severity, setSeverity] = useState<string>('')
 	const [status, setStatus] = useState<string>('')
 	const [fitKenyaTick, setFitKenyaTick] = useState<number>(0)
+    const [showNeighborhoods, setShowNeighborhoods] = useState<boolean>(false)
+    const [hoveredId, setHoveredId] = useState<number | null>(null)
+    const [showCounties, setShowCounties] = useState<boolean>(false)
+    const [countyGeo, setCountyGeo] = useState<any | null>(null)
+    const [showSubCounties, setShowSubCounties] = useState<boolean>(false)
+    const [subCountyGeo, setSubCountyGeo] = useState<any | null>(null)
 
-	const query = useQuery({
-		queryKey: ['map', { severity, status }],
-		queryFn: () =>
-			listCrimeReportMapPoints({
-				severity: severity || undefined,
-				status: status || undefined
-			})
-	})
+    const query = useQuery({
+        queryKey: ['map', { severity, status }],
+        queryFn: async () => {
+            try {
+                return await listCrimeReportMapPoints({
+                    severity: severity || undefined,
+                    status: status || undefined
+                })
+            } catch (e: any) {
+                const statusCode = e?.response?.status
+                if (statusCode === 401 || statusCode === 403) {
+                    const res = await fetch(`${API_BASE_URL}/public/map/`)
+                    if (!res.ok) throw e
+                    return (await res.json()) as any[]
+                }
+                throw e
+            }
+        }
+    })
+
+    const nbQuery = useQuery({
+        queryKey: ['neighborhoods_map'],
+        queryFn: async () => {
+            const res = await listNeighborhoods()
+            return res.results
+        }
+    })
+    const navigate = useNavigate()
+    const [colorByDensity, setColorByDensity] = useState<boolean>(false)
+    const [densityDays, setDensityDays] = useState<number>(7)
+    const countsQuery = useQuery({
+        queryKey: ['neighborhood_alert_counts', { days: densityDays }],
+        queryFn: async () => await neighborhoodAlertCounts({ days: densityDays }),
+        enabled: colorByDensity
+    })
+
+    // Cache and fetch county GeoJSON (7 days)
+    useEffect(() => {
+        if (!showCounties || countyGeo) return
+        const cached = (() => {
+            try {
+                const raw = localStorage.getItem('nawa_county_geo_v1')
+                const tsRaw = localStorage.getItem('nawa_county_geo_ts_v1')
+                const ts = tsRaw ? Number(tsRaw) : 0
+                const now = Date.now()
+                const sevenDays = 7 * 24 * 3600 * 1000
+                if (raw && now - ts < sevenDays) return JSON.parse(raw)
+            } catch {}
+            return null
+        })()
+        if (cached) { setCountyGeo(cached); return }
+        const controller = new AbortController()
+        const url = 'https://raw.githubusercontent.com/mikelmaron/kenya-election-data/master/data/counties.geojson'
+        fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+            .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+            .then((data) => {
+                setCountyGeo(data)
+                try {
+                    localStorage.setItem('nawa_county_geo_v1', JSON.stringify(data))
+                    localStorage.setItem('nawa_county_geo_ts_v1', String(Date.now()))
+                } catch {}
+            })
+            .catch(() => {})
+        return () => controller.abort()
+    }, [showCounties, countyGeo])
+
+    // Fetch sub-county GeoJSON (prefer backend endpoint, then external fallbacks)
+    useEffect(() => {
+        if (!showSubCounties || subCountyGeo) return
+        const controller = new AbortController()
+        const backend = `${API_BASE_URL}/public/subcounties_geojson/`
+        const primary = 'https://ckan.africadatahub.org/dataset/ebfdedaa-b9c4-442e-9144-72f2303105c5/resource/650999c2-c1f7-4acb-9bbb-d3af84a6a04b/download/kenya-subcounties-simplified.geojson'
+        const fallback = 'https://raw.githubusercontent.com/Mondieki/kenya-counties-subcounties/master/geojson/subcounties.geojson'
+        fetch(backend, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+            .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+            .then((data) => setSubCountyGeo(data))
+            .catch(() => {
+                fetch(primary, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+                    .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+                    .then((data) => setSubCountyGeo(data))
+                    .catch(() => {
+                        fetch(fallback, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+                            .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+                            .then((data) => setSubCountyGeo(data))
+                            .catch(() => { showToast('Failed to load sub-counties', 'error') })
+                    })
+            })
+        return () => controller.abort()
+    }, [showSubCounties, subCountyGeo])
+
+    const countyCounts = useMemo(() => {
+        const m: Record<string, number> = {}
+        const items = (query.data || []) as any[]
+        items.forEach((p) => {
+            const cname = normalizeCountyName((p && p.county) || '')
+            if (!cname) return
+            m[cname] = (m[cname] || 0) + 1
+        })
+        return m
+    }, [query.data])
+
+    const maxCountyCount = useMemo(() => {
+        let max = 0
+        Object.values(countyCounts).forEach((v) => { if (v > max) max = v })
+        return max
+    }, [countyCounts])
+
+    function countyFill(v: number, max: number): string {
+        if (max <= 0 || v <= 0) return '#e5e7eb'
+        const r = v / max
+        if (r < 0.2) return '#dbeafe'
+        if (r < 0.4) return '#a5b4fc'
+        if (r < 0.6) return '#818cf8'
+        if (r < 0.8) return '#6366f1'
+        return '#4338ca'
+    }
 
 	const center = useMemo(() => {
 		if (!query.data || query.data.length === 0) return DEFAULT_CENTER
@@ -40,8 +160,8 @@ export default function MapPage() {
 		<div style={{ display: 'grid', gap: 12 }}>
 			<h2>Incident Map</h2>
 
-			<div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-				<select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+            <div className="card"><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
 					<option value="">All severities</option>
 					<option value="low">Low</option>
 					<option value="medium">Medium</option>
@@ -57,50 +177,227 @@ export default function MapPage() {
 					<option value="resolved">Resolved</option>
 					<option value="closed">Closed</option>
 				</select>
-				<button onClick={() => query.refetch()}>Refresh</button>
-				<button onClick={() => setFitKenyaTick((t) => t + 1)}>Zoom to Kenya</button>
-			</div>
+                <button onClick={() => query.refetch()}>Refresh</button>
+                <button onClick={() => setFitKenyaTick((t) => t + 1)}>Zoom to Kenya</button>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={showNeighborhoods} onChange={(e) => setShowNeighborhoods(e.target.checked)} />
+                    Show neighborhoods
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={showCounties} onChange={(e) => setShowCounties(e.target.checked)} />
+                    Show counties
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={showSubCounties} onChange={(e) => setShowSubCounties(e.target.checked)} />
+                    Show sub-counties
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={colorByDensity} onChange={(e) => setColorByDensity(e.target.checked)} />
+                    Color by density
+                </label>
+                {colorByDensity && (
+                    <select value={densityDays} onChange={(e) => setDensityDays(Number(e.target.value))}>
+                        <option value={7}>Last 7 days</option>
+                        <option value={30}>Last 30 days</option>
+                        <option value={90}>Last 90 days</option>
+                        <option value={365}>Last 365 days</option>
+                    </select>
+                )}
+			</div></div>
 
 			{query.isLoading && <p>Loading map data…</p>}
-			{query.isError && <p style={{ color: 'crimson' }}>Failed to load map points.</p>}
+            {query.isError && (
+                <div style={{ color: '#fecaca', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span>Failed to load map points.</span>
+                    <button onClick={() => { setSeverity(''); setStatus(''); query.refetch() }}>Reset filters</button>
+                    <Link to="/public/map" style={{ padding: '6px 10px', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', textDecoration: 'none' }}>View Public Map</Link>
+                </div>
+            )}
 
-			<div style={{ height: '70vh', width: '100%', border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
-				<MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
-					<FitKenya tick={fitKenyaTick} />
-					<TileLayer
-						attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-						url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-					/>
-					{query.data?.map((point) => (
-						<Marker key={point.id} position={[point.latitude, point.longitude]} icon={defaultMarkerIcon}>
-							<Popup>
-								<strong>{point.name_of_crime}</strong>
-								<br />
-								OB: {point.occurance_book_number}
-								<br />
-								Severity: {point.severity}
-								<br />
-								Status: {point.status}
-								<br />
-								{point.location_name && (
-									<>
-										Location: {point.location_name}
-										<br />
-									</>
-								)}
-								{point.location_description && (
-									<>
-										Notes: {point.location_description}
-										<br />
-									</>
-								)}
-								Updated: {new Date(point.date_updated).toLocaleString()}
-							</Popup>
-						</Marker>
-					))}
+			<div style={{ height: '70vh', width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', background: 'rgba(17,24,39,0.6)' }}>
+                <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
+                    {showCounties && (
+                        <div style={{ position: 'absolute', zIndex: 1000, left: 12, top: 12, background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', color: '#e5e7eb', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
+                            <div style={{ fontSize: 12, letterSpacing: 0.2, textTransform: 'uppercase', opacity: 0.9, marginBottom: 4 }}>County color scale</div>
+                            <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 16, height: 16, borderRadius: 4, background: countyFill(0, maxCountyCount), boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                    <span style={{ fontSize: 13, fontWeight: 500 }}>0</span>
+                                </div>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 16, height: 16, borderRadius: 4, background: countyFill(Math.max(1, Math.floor(maxCountyCount * 0.1)), maxCountyCount), boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                    <span style={{ fontSize: 13, fontWeight: 500 }}>≤ 20% of max</span>
+                                </div>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 16, height: 16, borderRadius: 4, background: countyFill(Math.floor(maxCountyCount * 0.3), maxCountyCount), boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                    <span style={{ fontSize: 13, fontWeight: 500 }}>≤ 40% of max</span>
+                                </div>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 16, height: 16, borderRadius: 4, background: countyFill(Math.floor(maxCountyCount * 0.5), maxCountyCount), boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                    <span style={{ fontSize: 13, fontWeight: 500 }}>≤ 60% of max</span>
+                                </div>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 16, height: 16, borderRadius: 4, background: countyFill(Math.floor(maxCountyCount * 0.7), maxCountyCount), boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                    <span style={{ fontSize: 13, fontWeight: 500 }}>≤ 80% of max</span>
+                                </div>
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                    <span style={{ width: 16, height: 16, borderRadius: 4, background: countyFill(maxCountyCount, maxCountyCount), boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                    <span style={{ fontSize: 13, fontWeight: 500 }}>{'>'} 80% of max</span>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                    <FitKenya tick={fitKenyaTick} />
+                    <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    />
+                    {showCounties && countyGeo && (
+                        <GeoJSON
+                            data={countyGeo}
+                            style={(feature: any) => {
+                                const raw = (feature && feature.properties && (feature.properties.COUNTY_NAM || feature.properties.name)) || ''
+                                const name = normalizeCountyName(String(raw))
+                                const v = countyCounts[name] || 0
+                                return { color: '#7c3aed', weight: 1, fillOpacity: 0.12, fillColor: countyFill(v, maxCountyCount) }
+                            }}
+                            onEachFeature={(feature: any, layer: any) => {
+                                const raw = (feature && feature.properties && (feature.properties.COUNTY_NAM || feature.properties.name)) || ''
+                                const name = normalizeCountyName(String(raw))
+                                const v = countyCounts[name] || 0
+                                layer.bindPopup(`${name}${v ? ` — ${v} incident${v === 1 ? '' : 's'}` : ''}`)
+                                try { layer.on('click', () => { try { (layer as any)._map.fitBounds(layer.getBounds(), { padding: [20, 20] }) } catch {} }) } catch {}
+                            }}
+                        />
+                    )}
+                    {showSubCounties && subCountyGeo && (
+                        <GeoJSON
+                            data={subCountyGeo}
+                            style={() => ({ color: '#059669', weight: 1, fillOpacity: 0.03 })}
+                            onEachFeature={(feature: any, layer: any) => {
+                                const props = (feature && feature.properties) || {}
+                                const candidates = ['name','NAME','SubCounty','SUBCOUNTY','subcounty','SC_NAME','SCNAME','Sub_County','SUB_COUNTY','SUB_CNTY']
+                                let raw = ''
+                                for (const k of candidates) {
+                                    const v = props[k]
+                                    if (typeof v === 'string' && v.trim() && !/^sub[- ]?county$/i.test(v)) { raw = v.trim(); break }
+                                }
+                                const name = raw || 'Sub-County'
+                                try { layer.bindTooltip(name, { sticky: true }) } catch {}
+                                layer.bindPopup(name)
+                                try { layer.on('click', () => { try { (layer as any)._map.fitBounds(layer.getBounds(), { padding: [20, 20] }) } catch {} }) } catch {}
+                            }}
+                        />
+                    )}
+					{showNeighborhoods && (
+						<div style={{ position: 'absolute', zIndex: 1000, right: 10, top: 10, background: 'rgba(17,24,39,0.8)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: 10, color: '#e5e7eb' }}>
+							<strong>Legend</strong>
+							<div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
+								<div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+									<span style={{ width: 14, height: 14, background: '#2b6cb0', opacity: 0.2, border: '2px solid #2b6cb0', display: 'inline-block' }}></span>
+									<span>Neighborhood area</span>
+								</div>
+							</div>
+						</div>
+					)}
+                {query.data && query.data.length === 0 && (
+                    <div style={{ position: 'absolute', zIndex: 1000, left: 10, top: 10, background: 'rgba(17,24,39,0.8)', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, padding: 10, color: '#e5e7eb' }}>
+                        <span style={{ marginRight: 8 }}>No points found.</span>
+                        <button onClick={() => setFitKenyaTick((t) => t + 1)} style={{ marginRight: 8 }}>Fit Kenya</button>
+                        <Link to="/public/map" style={{ padding: '6px 10px', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', textDecoration: 'none' }}>View Public Map</Link>
+                    </div>
+                )}
+                {!!query.data && query.data.length > 0 && (
+                    <div style={{ position: 'absolute', zIndex: 1000, right: 12, bottom: 12, background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', color: '#e5e7eb', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
+                        <div style={{ fontSize: 12, letterSpacing: 0.2, textTransform: 'uppercase', opacity: 0.9, marginBottom: 4 }}>Severity</div>
+                        <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ width: 16, height: 16, borderRadius: 999, background: '#10b981', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                <span style={{ fontSize: 13, fontWeight: 500 }}>Low</span>
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ width: 16, height: 16, borderRadius: 999, background: '#f59e0b', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                <span style={{ fontSize: 13, fontWeight: 500 }}>Medium</span>
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ width: 16, height: 16, borderRadius: 999, background: '#ef4444', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                <span style={{ fontSize: 13, fontWeight: 500 }}>High</span>
+                            </div>
+                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                                <span style={{ width: 16, height: 16, borderRadius: 999, background: '#7c3aed', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
+                                <span style={{ fontSize: 13, fontWeight: 500 }}>Critical</span>
+                            </div>
+                        </div>
+                    </div>
+                )}
+                    {showNeighborhoods && nbQuery.data?.map((n) => {
+                        const poly = (n as any).polygon
+                        const coords = poly?.coordinates?.[0]
+                        if (!coords || !Array.isArray(coords)) return null
+                        const latlngs = coords.map((c: any) => [c[1], c[0]])
+                        const active = hoveredId === n.id
+                        let color = active ? '#004e92' : '#2b6cb0'
+                        let fillOpacity = active ? 0.2 : 0.1
+                        let weight = active ? 3 : 2
+                        if (colorByDensity && countsQuery.data?.results) {
+                            const entry = countsQuery.data.results.find((r) => r.id === (n as any).id)
+                            const c = entry?.count ?? 0
+                            if (c > 20) { color = '#a30000'; fillOpacity = 0.35 }
+                            else if (c > 10) { color = '#d43f3a'; fillOpacity = 0.3 }
+                            else if (c > 5) { color = '#f0ad4e'; fillOpacity = 0.25 }
+                            else if (c > 0) { color = '#5cb85c'; fillOpacity = 0.2 }
+                        }
+                        return (
+                          <Polygon
+                            key={`nb-${n.id}`}
+                            positions={latlngs as any}
+                            pathOptions={{ color, weight, fillOpacity }}
+                            eventHandlers={{ click: () => navigate(`/neighborhood/${n.id}`), mouseover: () => setHoveredId(n.id), mouseout: () => setHoveredId(null) }}
+                          >
+                            <Tooltip sticky>{(n as any).name ?? `Neighborhood #${n.id}`}</Tooltip>
+                          </Polygon>
+                        )
+                    })}
+                    {query.data?.map((point) => {
+                        const sc = (sev: string) => {
+                            const s = String(sev || '').toLowerCase()
+                            if (s === 'low') return '#10b981'
+                            if (s === 'medium') return '#f59e0b'
+                            if (s === 'high') return '#ef4444'
+                            if (s === 'critical') return '#7c3aed'
+                            return '#2563eb'
+                        }
+                        const icon = L.divIcon({ className: 'leaflet-div-icon', html: `<span class="pulse-marker" style="--pulse-color:${sc(point.severity)}"></span>`, iconSize: [16,16], iconAnchor: [8,8] })
+                        return (
+                            <Marker key={point.id} position={[point.latitude, point.longitude]} icon={icon}>
+                                <Popup>
+                                    <strong>{point.name_of_crime}</strong>
+                                    <br />
+                                    OB: {point.occurance_book_number}
+                                    <br />
+                                    Severity: {point.severity}
+                                    <br />
+                                    Status: {point.status}
+                                    <br />
+                                    {point.location_name && (
+                                        <>
+                                            Location: {point.location_name}
+                                            <br />
+                                        </>
+                                    )}
+                                    {point.location_description && (
+                                        <>
+                                            Notes: {point.location_description}
+                                            <br />
+                                        </>
+                                    )}
+                                    Updated: {new Date(point.date_updated).toLocaleString()}
+                                </Popup>
+                            </Marker>
+                        )
+                    })}
 				</MapContainer>
 			</div>
 		</div>
 	)
 }
-

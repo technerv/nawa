@@ -22,6 +22,7 @@ export default function LoginPage() {
 			const profile = await me()
 			setInfo(`Logged in as ${profile.username} (${profile.roles.join(', ') || 'No role'})`)
 			try { localStorage.setItem('roles', JSON.stringify(profile.roles || [])) } catch {}
+			try { window.dispatchEvent(new CustomEvent('roles_updated', { detail: { roles: profile.roles || [], username: profile.username || null } })) } catch {}
 			// redirect to requested page or map
 			navigate(redirectTo, { replace: true })
 		} catch (err: any) {
@@ -30,16 +31,17 @@ export default function LoginPage() {
 	}
 
 	return (
-		<div style={{ maxWidth: 420, margin: '40px auto' }}>
-			<h2>Login</h2>
-			<form onSubmit={onSubmit} style={{ display: 'grid', gap: 8 }}>
-				<input placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
-				<input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-				<button type="submit">Login</button>
-				{error && <p style={{ color: 'crimson' }}>{error}</p>}
-				{info && <p style={{ color: 'green' }}>{info}</p>}
-			</form>
+		<div style={{ maxWidth: 460, margin: '40px auto' }}>
+			<h2 style={{ marginBottom: 12 }}>Login</h2>
+			<div className="card">
+				<form onSubmit={onSubmit} style={{ display: 'grid', gap: 10 }}>
+					<input name="username" placeholder="Username" value={username} onChange={(e) => setUsername(e.target.value)} />
+					<input name="password" placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+					<button type="submit">Login</button>
+					{error && <p style={{ color: '#fecaca' }}>{error}</p>}
+					{info && <p style={{ color: '#a7f3d0' }}>{info}</p>}
+				</form>
+			</div>
 		</div>
 	)
 }
-

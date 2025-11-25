@@ -87,7 +87,7 @@ export async function listCrimeReportMapPoints(params?: {
 	return res.data
 }
 
-export async function updateCrimeReport(id: number, payload: Partial<CrimeReport> & { change_note?: string }) {
+export async function updateCrimeReport(id: number, payload: (Partial<CrimeReport> & { change_note?: string }) | ({ status?: string; severity?: string; change_note?: string })) {
 	const res = await api.patch<CrimeReport>(`/crimereportbook/${id}/`, payload)
 	return res.data
 }
@@ -114,3 +114,30 @@ export async function createCrimeReport(payload: Partial<Omit<CrimeReport, 'id' 
 	return res.data
 }
 
+export async function createPublicCrimeReport(payload: {
+  name_of_crime: string
+  category_of_crime: number
+  description?: string
+  location_name?: string
+  location_description?: string
+  county?: string
+  latitude?: number
+  longitude?: number
+}) {
+  const res = await fetch(`${(await import('./axios')).API_BASE_URL}/public/reports/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  if (!res.ok) {
+    const text = await res.text()
+    let msg = text || 'Public report failed'
+    try {
+      const json = JSON.parse(text)
+      const d = (json && json.detail) || json
+      msg = typeof d === 'string' ? d : JSON.stringify(d)
+    } catch {}
+    throw new Error(msg)
+  }
+  return await res.json()
+}

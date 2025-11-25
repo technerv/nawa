@@ -2,6 +2,7 @@ from rest_framework import serializers
 from django.contrib.auth import get_user_model
 from django.utils import timezone
 from .models import CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog, AlertEvent
+from .models import Neighborhood, NeighborhoodMember
 
 class CrimeReportBookAuditLogSerializer(serializers.ModelSerializer):
     changed_by_name = serializers.SerializerMethodField()
@@ -45,6 +46,30 @@ class CrimeReportBookAuditLogSerializer(serializers.ModelSerializer):
             return None
         return user.get_full_name() or user.get_username()
 
+    
+
+class NeighborhoodSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Neighborhood
+        fields = ['id', 'name', 'center_lat', 'center_lon', 'invite_code', 'polygon', 'created_at']
+        read_only_fields = ['id', 'created_at']
+
+
+class NeighborhoodMemberSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NeighborhoodMember
+        fields = ['id', 'neighborhood', 'user', 'user_name', 'role', 'joined_at']
+        read_only_fields = ['id', 'joined_at', 'user_name']
+
+    def get_user_name(self, obj):
+        user = getattr(obj, 'user', None)
+        if not user:
+            return None
+        return user.get_full_name() or user.get_username()
+
+    
 
 class CrimeCategorySerializer(serializers.ModelSerializer):
 

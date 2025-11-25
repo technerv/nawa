@@ -75,6 +75,7 @@ SPECTACULAR_SETTINGS = {
 }
 
 from datetime import timedelta
+from corsheaders.defaults import default_headers
 SIMPLE_JWT = {
 	'ACCESS_TOKEN_LIFETIME': timedelta(minutes=int(os.getenv('JWT_ACCESS_MINUTES', '60'))),
 	'REFRESH_TOKEN_LIFETIME': timedelta(days=int(os.getenv('JWT_REFRESH_DAYS', '7'))),
@@ -186,6 +187,9 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 CORS_ALLOW_ALL_ORIGINS = os.getenv('CORS_ALLOW_ALL_ORIGINS', 'True').lower() in ('1', 'true', 'yes')
 _cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
+CORS_ALLOW_HEADERS = list(default_headers) + [
+    'if-none-match',
+]
 
 # Role permissions enforcement (set to True in production to enforce group-based perms)
 ENFORCE_ROLE_PERMS = os.getenv('ENFORCE_ROLE_PERMS', 'False').lower() in ('1', 'true', 'yes')
@@ -214,8 +218,12 @@ CELERY_BEAT_SCHEDULE = {
 		'task': 'nawaapp.tasks.send_daily_summary',
 		'schedule': 86400.0,  # Daily at midnight (adjust with crontab_beat for 06:00)
 	},
-	'retry-failed-alerts': {
-		'task': 'nawaapp.tasks.retry_failed_alerts',
-		'schedule': 300.0,  # Every 5 minutes
-	},
+    'retry-failed-alerts': {
+        'task': 'nawaapp.tasks.retry_failed_alerts',
+        'schedule': 300.0,  # Every 5 minutes
+    },
+    'warm-subcounties-cache': {
+        'task': 'nawaapp.tasks.warm_subcounties_cache',
+        'schedule': 43200.0,  # Every 12 hours
+    },
 }

@@ -1,11 +1,14 @@
 import { hasAnyRole, ROLES } from '../lib/roles'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createCrimeReport, listCrimeCategories, listCrimeReports, updateCrimeReport } from '../api/crime'
+import { API_BASE_URL } from '../api/axios'
+import { subscribeAlerts, listSubscriptions, unsubscribeAlert } from '../api/alerts'
+import { showToast } from '../lib/toast'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import { resolveMediaUrl } from '../lib/media'
 import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet'
 import { defaultMarkerIcon } from '../lib/leafletIcons'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, Link } from 'react-router-dom'
 
 export default function ReportsPage() {
 	const queryClient = useQueryClient()
@@ -18,6 +21,15 @@ export default function ReportsPage() {
 	const [page, setPage] = useState(1)
 	const [countyFilter, setCountyFilter] = useState<string>('')
 	const [searchParams, setSearchParams] = useSearchParams()
+	const [usedPublic, setUsedPublic] = useState(false)
+	const [lastErrorStatus, setLastErrorStatus] = useState<number | null>(null)
+    useEffect(() => {
+        if (!usedPublic) return
+        const timer = setInterval(() => {
+            reportsQuery.refetch()
+        }, 120000)
+        return () => clearInterval(timer)
+    }, [usedPublic])
 
 	useEffect(() => {
 		const county = searchParams.get('county')
@@ -32,22 +44,62 @@ export default function ReportsPage() {
 
 	const reportsQuery = useQuery({
 		queryKey: ['reports', { search, ordering, ageMin, ageMax, categoryId, countyFilter, page }],
-		queryFn: () =>
-			listCrimeReports({
-				search: search || undefined,
-				ordering,
-				age__gte: ageMin,
-				age__lte: ageMax,
-				category_of_crime: categoryId,
-				county: countyFilter || undefined,
-				page
-			})
+		queryFn: async () => {
+			try {
+				const data = await listCrimeReports({
+					search: search || undefined,
+					ordering,
+					age__gte: ageMin,
+					age__lte: ageMax,
+					category_of_crime: categoryId,
+					county: countyFilter || undefined,
+					page
+				})
+				setUsedPublic(false)
+				return data
+			} catch (e: any) {
+				const params = new URLSearchParams()
+				if (search) params.set('search', search)
+				if (ordering) params.set('ordering', ordering)
+				if (countyFilter) params.set('county', countyFilter)
+				if (page) params.set('page', String(page))
+				const res = await fetch(`${API_BASE_URL}/public/reports/?` + params.toString())
+				if (!res.ok) throw e
+				const data = await res.json()
+				setLastErrorStatus(e?.response?.status ?? null)
+				setUsedPublic(true)
+				return {
+					count: data.count ?? data.results?.length ?? 0,
+					next: data.next ?? null,
+					previous: data.previous ?? null,
+					results: (data.results || []).map((r: any) => ({
+						id: r.id,
+						occurance_book_number: r.occurance_book_number ?? '—',
+						name_of_crime: r.name_of_crime,
+						description: r.description,
+						location_name: r.location_name,
+						county: r.county,
+						age: undefined,
+						date_of_arrest: undefined,
+						upload_criminal_photo: null,
+						date_created: r.date_updated,
+						date_updated: r.date_updated,
+						category_of_crime: 0,
+						category_of_crime_name: r.category_of_crime_name
+					}))
+				}
+			}
+		}
 	})
 
 	const categoriesQuery = useQuery({
 		queryKey: ['categories', { for: 'reports' }],
 		queryFn: () => listCrimeCategories()
 	})
+    const subscriptionsQuery = useQuery({
+        queryKey: ['subscriptions'],
+        queryFn: () => listSubscriptions()
+    })
 
 	// Form state
 	const [name_of_crime, setNameOfCrime] = useState('')
@@ -97,6 +149,8 @@ export default function ReportsPage() {
 			setLongitude(undefined)
 			setCounty('')
 			queryClient.invalidateQueries({ queryKey: ['reports'] })
+			queryClient.invalidateQueries({ queryKey: ['neighborhood_alert_counts'] })
+			showToast('Report created', 'success')
 		}
 	})
 
@@ -194,10 +248,15 @@ export default function ReportsPage() {
 	const canCreate = hasAnyRole([ROLES.Admin, ROLES.Dispatcher, ROLES.FieldOfficer, ROLES.Reporter, ROLES.SuperAdmin])
 	return (
 		<div>
-			<h2>Crime Reports</h2>
+			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+				<h2 style={{ margin: 0 }}>Crime Reports</h2>
+				<span style={{ fontSize: 12, padding: '6px 10px', borderRadius: 999, border: usedPublic ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(16,185,129,0.35)', background: usedPublic ? 'rgba(251,191,36,0.15)' : 'rgba(16,185,129,0.12)', color: '#e5e7eb' }}>
+					{usedPublic ? 'Public Data' : 'Private Data'}
+				</span>
+			</div>
 
-			<div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 12 }}>
-				<input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
+		<div className="card mb-3"><div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+			<input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
 				<select value={ordering} onChange={(e) => setOrdering(e.target.value)}>
 					<option value="-date_updated">Newest</option>
 					<option value="date_updated">Oldest</option>
@@ -231,25 +290,44 @@ export default function ReportsPage() {
 						</option>
 					))}
 				</select>
-				<button onClick={() => { setPage(1); reportsQuery.refetch() }}>Apply</button>
-			</div>
+			<button onClick={() => { setPage(1); reportsQuery.refetch() }}>Apply</button>
+			{countyFilter && (
+				<>
+					{(subscriptionsQuery.data?.results || []).some((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase()) ? (
+						<button onClick={async () => { const sub = (subscriptionsQuery.data!.results.find((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase())!); await unsubscribeAlert(sub.id); showToast('Unsubscribed from county', 'success'); subscriptionsQuery.refetch() }}>Unfollow county</button>
+					) : (
+						<button onClick={async () => { await subscribeAlerts({ county: countyFilter, channel: 'sms' }); showToast('Subscribed to county alerts', 'success'); subscriptionsQuery.refetch() }}>Follow county</button>
+					)}
+				</>
+			)}
+			{countyFilter && (
+				<>
+					{(subscriptionsQuery.data?.results || []).some((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase()) ? (
+						<button onClick={async () => { const sub = (subscriptionsQuery.data!.results.find((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase())!); await unsubscribeAlert(sub.id); showToast('Unsubscribed from county', 'success'); subscriptionsQuery.refetch() }}>Unfollow county</button>
+					) : (
+						<button onClick={async () => { await subscribeAlerts({ county: countyFilter, channel: 'sms' }); showToast('Subscribed to county alerts', 'success'); subscriptionsQuery.refetch() }}>Follow county</button>
+					)}
+				</>
+			)}
+		</div>
+		<small style={{ color: '#cbd5e1', display: 'block', marginTop: -8, marginBottom: 0 }}>County accepts aliases like "Kajiado" or full "Kajiado County".</small></div>
 
 			{canCreate ? (
-			<form onSubmit={onCreate} style={{ display: 'grid', gap: 8, maxWidth: 640, marginBottom: 16 }}>
-				<input required placeholder="Name of crime" value={name_of_crime} onChange={(e) => setNameOfCrime(e.target.value)} />
-				<textarea placeholder="Description of events" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
-				<input placeholder="Location name" value={location_name} onChange={(e) => setLocationName(e.target.value)} />
-				<input placeholder="Location description" value={location_description} onChange={(e) => setLocationDescription(e.target.value)} />
-				<input placeholder="County" value={county} onChange={(e) => setCounty(e.target.value)} />
+			<div className="card mb-3"><form onSubmit={onCreate} style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
+				<input required name="name_of_crime" placeholder="Name of crime" value={name_of_crime} onChange={(e) => setNameOfCrime(e.target.value)} />
+				<textarea name="description" placeholder="Description of events" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
+				<input name="location_name" placeholder="Location name" value={location_name} onChange={(e) => setLocationName(e.target.value)} />
+				<input name="location_description" placeholder="Location description" value={location_description} onChange={(e) => setLocationDescription(e.target.value)} />
+				<input name="county" placeholder="County" value={county} onChange={(e) => setCounty(e.target.value)} />
 				<div style={{ display: 'flex', gap: 8 }}>
-					<input style={{ flex: 1 }} placeholder="Latitude (-90 to 90)" type="number" step="0.000001" value={latitude ?? ''} onChange={(e) => setLatitude(e.target.value ? Number(e.target.value) : undefined)} />
-					<input style={{ flex: 1 }} placeholder="Longitude (-180 to 180)" type="number" step="0.000001" value={longitude ?? ''} onChange={(e) => setLongitude(e.target.value ? Number(e.target.value) : undefined)} />
+					<input name="latitude" style={{ flex: 1 }} placeholder="Latitude (-90 to 90)" type="number" step="0.000001" value={latitude ?? ''} onChange={(e) => setLatitude(e.target.value ? Number(e.target.value) : undefined)} />
+					<input name="longitude" style={{ flex: 1 }} placeholder="Longitude (-180 to 180)" type="number" step="0.000001" value={longitude ?? ''} onChange={(e) => setLongitude(e.target.value ? Number(e.target.value) : undefined)} />
 				</div>
 				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
 					<button type="button" onClick={useMyLocation}>Use my location</button>
 					<small>or click on the map to set position</small>
 				</div>
-				<div style={{ height: 300, width: '100%', border: '1px solid #ccc', borderRadius: 6, overflow: 'hidden', position: 'relative' }}>
+				<div style={{ height: 300, width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', position: 'relative', background: 'rgba(17,24,39,0.6)' }}>
 					<MapContainer center={mapCenter} zoom={7} style={{ height: '100%', width: '100%' }}>
 						<FitKenyaMini />
 						<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
@@ -259,12 +337,12 @@ export default function ReportsPage() {
 						)}
 					</MapContainer>
 				</div>
-				<input placeholder="Name of criminal" value={name_of_criminal} onChange={(e) => setNameOfCriminal(e.target.value)} />
-				<input placeholder="Age" type="number" value={age ?? ''} onChange={(e) => setAge(e.target.value ? Number(e.target.value) : undefined)} />
-				<input placeholder="Criminal ID Number" type="number" value={criminal_id_number ?? ''} onChange={(e) => setCriminalIdNumber(e.target.value ? Number(e.target.value) : undefined)} />
-				<input placeholder="Date of arrest (YYYY-MM-DD)" type="date" value={date_of_arrest} onChange={(e) => setDateOfArrest(e.target.value)} />
-				<input type="file" accept="image/*" onChange={(e) => setUploadCriminalPhotoFile(e.target.files?.[0])} />
-				<select required value={category_of_crime ?? ''} onChange={(e) => setCategoryOfCrime(e.target.value ? Number(e.target.value) : undefined)}>
+				<input name="name_of_criminal" placeholder="Name of criminal" value={name_of_criminal} onChange={(e) => setNameOfCriminal(e.target.value)} />
+				<input name="age" placeholder="Age" type="number" value={age ?? ''} onChange={(e) => setAge(e.target.value ? Number(e.target.value) : undefined)} />
+				<input name="criminal_id_number" placeholder="Criminal ID Number" type="number" value={criminal_id_number ?? ''} onChange={(e) => setCriminalIdNumber(e.target.value ? Number(e.target.value) : undefined)} />
+				<input name="date_of_arrest" placeholder="Date of arrest (YYYY-MM-DD)" type="date" value={date_of_arrest} onChange={(e) => setDateOfArrest(e.target.value)} />
+				<input name="upload_criminal_photo" type="file" accept="image/*" onChange={(e) => setUploadCriminalPhotoFile(e.target.files?.[0])} />
+				<select required name="category_of_crime" value={category_of_crime ?? ''} onChange={(e) => setCategoryOfCrime(e.target.value ? Number(e.target.value) : undefined)}>
 					<option value="" disabled>
 						Select category
 					</option>
@@ -274,29 +352,48 @@ export default function ReportsPage() {
 						</option>
 					))}
 				</select>
-				<button type="submit" disabled={createMut.isLoading}>
+				<button type="submit" disabled={createMut.isPending}>
 					Create Report
 				</button>
 				{createMut.isError && (
-					<p style={{ color: 'crimson' }}>
+				<p style={{ color: '#fecaca' }}>
 						{(createMut.error as any)?.response?.data
 							? JSON.stringify((createMut.error as any).response.data)
 							: 'Create failed'}
 					</p>
 				)}
-			</form>
+			</form></div>
 			) : (
 				<p style={{ color: '#666', marginBottom: 16 }}>You do not have permission to create reports.</p>
 			)}
 
 			{reportsQuery.isLoading && <p>Loading...</p>}
-			{reportsQuery.isError && <p className="text-red-600">Failed to load reports</p>}
+			{reportsQuery.isError && (
+			<div style={{ color: '#fecaca', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+					<span>Failed to load reports.</span>
+					<button onClick={() => { setSearch(''); setOrdering('-date_updated'); setAgeMin(undefined); setAgeMax(undefined); setCategoryId(undefined); setCountyFilter(''); setPage(1); reportsQuery.refetch() }}>Reset filters</button>
+					<Link to="/public/dashboard" style={{ padding: '6px 10px', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', textDecoration: 'none' }}>View Public Dashboard</Link>
+				</div>
+			)}
 			{reportsQuery.data && (
 				<>
-					<div style={{ overflowX: 'auto', width: '100%' }}>
-						<table width="100%" cellPadding={8} style={{ borderCollapse: 'collapse', width: '100%', minWidth: '800px' }}>
+					{usedPublic && (
+					<div style={{ background: 'rgba(251,191,36,0.12)', border: '1px solid rgba(251,191,36,0.4)', color: '#fde68a', padding: 10, borderRadius: 12, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, justifyContent: 'space-between' }}>
+							<span>
+								Showing public data due to private API error{lastErrorStatus === 401 ? ' (unauthorized)' : ''}.
+							</span>
+							<div style={{ display: 'flex', gap: 8 }}>
+								<button onClick={() => reportsQuery.refetch()}>Retry private</button>
+								{lastErrorStatus === 401 && (
+									<Link to="/login" style={{ padding: '6px 10px', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', textDecoration: 'none' }}>Login</Link>
+								)}
+							</div>
+						</div>
+					)}
+					<div className="card" style={{ overflowX: 'auto', width: '100%' }}>
+						<table style={{ minWidth: '800px' }}>
 							<thead>
-								<tr style={{ backgroundColor: '#f5f5f5', borderBottom: '2px solid #ddd' }}>
+								<tr>
 									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Photo</th>
 									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>OB Number</th>
 									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Crime</th>
@@ -313,13 +410,13 @@ export default function ReportsPage() {
 							<tbody>
 								{reportsQuery.data.results.length === 0 ? (
 									<tr>
-										<td colSpan={hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) ? 11 : 10} style={{ textAlign: 'center', padding: '40px', color: '#666' }}>
+										<td colSpan={hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) ? 11 : 10} style={{ textAlign: 'center', padding: '40px', color: '#cbd5e1' }}>
 											No reports found
 										</td>
 									</tr>
 								) : (
-									reportsQuery.data.results.map((r) => (
-										<tr key={r.id} style={{ borderTop: '1px solid #eee', backgroundColor: '#fff' }}>
+						reportsQuery.data.results.map((r: any) => (
+										<tr key={r.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
 											<td style={{ padding: '8px' }}>
 												{r.upload_criminal_photo ? (
 													<img
@@ -342,7 +439,7 @@ export default function ReportsPage() {
 											<td style={{ padding: '8px' }}>{new Date(r.date_updated).toLocaleString()}</td>
 											{hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) && (
 												<td style={{ padding: '8px' }}>
-													<RowModeration id={r.id} currentStatus={(r as any).status} currentSeverity={(r as any).severity} onSaved={() => reportsQuery.refetch()} />
+						<RowModeration id={r.id} currentStatus={(r as any).status} currentSeverity={(r as any).severity} onSaved={() => { queryClient.invalidateQueries({ queryKey: ['neighborhood_alert_counts'] }); reportsQuery.refetch() }} />
 												</td>
 											)}
 										</tr>
@@ -359,7 +456,7 @@ export default function ReportsPage() {
 						<button disabled={!reportsQuery.data.next} onClick={() => setPage((p) => p + 1)}>
 							Next
 						</button>
-						{typeof reportsQuery.data.count === 'number' && <span style={{ color: '#666' }}>Total: {reportsQuery.data.count}</span>}
+						{typeof reportsQuery.data.count === 'number' && <span style={{ color: '#cbd5e1' }}>Total: {reportsQuery.data.count}</span>}
 					</div>
 				</>
 			)}
@@ -382,6 +479,7 @@ function RowModeration({ id, currentStatus, currentSeverity, onSaved }: { id: nu
 		try {
 			await updateCrimeReport(id, { status, severity, change_note: 'moderated via UI' })
 			onSaved()
+			showToast('Report updated', 'success')
 		} catch (e: any) {
 			setErr(e?.response?.data?.detail || 'Save failed')
 		} finally {
@@ -406,4 +504,3 @@ function RowModeration({ id, currentStatus, currentSeverity, onSaved }: { id: nu
 		</div>
 	)
 }
-

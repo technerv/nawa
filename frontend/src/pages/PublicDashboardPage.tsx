@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/axios'
 import { FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { normalizeCountyName } from '../lib/normalizeCounty'
 
 type SummaryResponse = {
 	date_from?: string | null
@@ -29,9 +30,9 @@ export default function PublicDashboardPage() {
 		<div>
 			<h2>Public Dashboard</h2>
 			<form onSubmit={(e: FormEvent) => { e.preventDefault(); query.refetch() }} className="row mb-3">
-				<input type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
-				<input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
-				<input placeholder="County (optional)" value={county} onChange={(e) => setCounty(e.target.value)} />
+				<input name="date_from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+				<input name="date_to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+				<input name="county" placeholder="County (optional)" value={county} onChange={(e) => setCounty(e.target.value)} />
 				<button type="submit">Apply</button>
 				<button type="button" onClick={() => { setDateFrom(''); setDateTo(''); setCounty(''); query.refetch() }}>Clear</button>
 			</form>
@@ -49,6 +50,73 @@ export default function PublicDashboardPage() {
 							<span>Total: {query.data.national.total}</span>
 						</div>
 					</div>
+					<div className="card mb-3">
+						<strong>Severity distribution</strong>
+						<div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+							<div style={{ display: 'grid', gap: 4 }}>
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+									<span style={{ minWidth: 70 }}>Low</span>
+									<div style={{ flex: 1, height: 16, background: '#f3f4f6', borderRadius: 8, overflow: 'hidden' }}>
+										<div style={{ width: `${query.data.national.total ? Math.round((query.data.national.low / query.data.national.total) * 100) : 0}%`, height: '100%', background: '#10b981' }} />
+									</div>
+									<span style={{ minWidth: 40, textAlign: 'right' }}>{query.data.national.low}</span>
+								</div>
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+									<span style={{ minWidth: 70 }}>Medium</span>
+									<div style={{ flex: 1, height: 16, background: '#f3f4f6', borderRadius: 8, overflow: 'hidden' }}>
+										<div style={{ width: `${query.data.national.total ? Math.round((query.data.national.medium / query.data.national.total) * 100) : 0}%`, height: '100%', background: '#f59e0b' }} />
+									</div>
+									<span style={{ minWidth: 40, textAlign: 'right' }}>{query.data.national.medium}</span>
+								</div>
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+									<span style={{ minWidth: 70 }}>High</span>
+									<div style={{ flex: 1, height: 16, background: '#f3f4f6', borderRadius: 8, overflow: 'hidden' }}>
+										<div style={{ width: `${query.data.national.total ? Math.round((query.data.national.high / query.data.national.total) * 100) : 0}%`, height: '100%', background: '#ef4444' }} />
+									</div>
+									<span style={{ minWidth: 40, textAlign: 'right' }}>{query.data.national.high}</span>
+								</div>
+								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+									<span style={{ minWidth: 70 }}>Critical</span>
+									<div style={{ flex: 1, height: 16, background: '#f3f4f6', borderRadius: 8, overflow: 'hidden' }}>
+										<div style={{ width: `${query.data.national.total ? Math.round((query.data.national.critical / query.data.national.total) * 100) : 0}%`, height: '100%', background: '#7c3aed' }} />
+									</div>
+									<span style={{ minWidth: 40, textAlign: 'right' }}>{query.data.national.critical}</span>
+								</div>
+						</div>
+					</div>
+				</div>
+				<div className="card mb-3">
+					<strong>Top counties (stacked by severity)</strong>
+					<div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+							{query.data.by_county.slice(0, 10).map((row, idx) => {
+								const total = row.total || 0
+								const pLow = total ? (row.low / total) * 100 : 0
+								const pMed = total ? (row.medium / total) * 100 : 0
+								const pHigh = total ? (row.high / total) * 100 : 0
+								const pCrit = total ? (row.critical / total) * 100 : 0
+								return (
+									<div key={idx} style={{ display: 'grid', gap: 6 }}>
+										<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+											<span style={{ minWidth: 160 }}>{normalizeCountyName(row.county)}</span>
+											<div style={{ flex: 1, height: 16, background: '#f3f4f6', borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
+												<div style={{ width: `${Math.round(pLow)}%`, height: '100%', background: '#10b981' }} />
+												<div style={{ width: `${Math.round(pMed)}%`, height: '100%', background: '#f59e0b' }} />
+												<div style={{ width: `${Math.round(pHigh)}%`, height: '100%', background: '#ef4444' }} />
+												<div style={{ width: `${Math.round(pCrit)}%`, height: '100%', background: '#7c3aed' }} />
+											</div>
+											<span style={{ minWidth: 60, textAlign: 'right' }}>{total}</span>
+										</div>
+									</div>
+								)
+							})}
+							<div style={{ display: 'flex', gap: 12, alignItems: 'center', marginTop: 8 }}>
+								<span style={{ width: 12, height: 12, background: '#10b981', display: 'inline-block' }} /> Low
+								<span style={{ width: 12, height: 12, background: '#f59e0b', display: 'inline-block' }} /> Medium
+								<span style={{ width: 12, height: 12, background: '#ef4444', display: 'inline-block' }} /> High
+								<span style={{ width: 12, height: 12, background: '#7c3aed', display: 'inline-block' }} /> Critical
+							</div>
+						</div>
+					</div>
 					<table>
 						<thead>
 							<tr>
@@ -61,16 +129,16 @@ export default function PublicDashboardPage() {
 							</tr>
 						</thead>
 						<tbody>
-							{query.data.by_county.map((row, idx) => (
-								<tr key={idx} style={{ cursor: 'pointer' }} onClick={() => navigate(`/reports?county=${encodeURIComponent(row.county)}`)}>
-									<td><u>{row.county}</u></td>
-									<td>{row.low}</td>
-									<td>{row.medium}</td>
-									<td>{row.high}</td>
-									<td>{row.critical}</td>
-									<td>{row.total}</td>
-								</tr>
-							))}
+                            {query.data.by_county.map((row, idx) => (
+                                <tr key={idx} style={{ cursor: 'pointer' }} onClick={() => navigate(`/reports?county=${encodeURIComponent(normalizeCountyName(row.county))}`)}>
+                                    <td><u>{normalizeCountyName(row.county)}</u></td>
+                                    <td>{row.low}</td>
+                                    <td>{row.medium}</td>
+                                    <td>{row.high}</td>
+                                    <td>{row.critical}</td>
+                                    <td>{row.total}</td>
+                                </tr>
+                            ))}
 						</tbody>
 					</table>
 				</>
@@ -78,4 +146,3 @@ export default function PublicDashboardPage() {
 		</div>
 	)
 }
-

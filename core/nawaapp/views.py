@@ -7,6 +7,7 @@ from rest_framework.views import APIView
 from django.contrib.auth.models import Group
 from nawaapp.models import CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog, AlertEvent
 from .serializers import CrimeCategorySerializer, CrimeReportBookSerializer, CrimeWitnessSerializer, AlertEventSerializer
+from .serializers import NeighborhoodSerializer, NeighborhoodMemberSerializer
 from django.conf import settings
 from .permissions import IsAdminOrDispatcherOrReadOnly
 from django.contrib.auth import get_user_model
@@ -18,7 +19,12 @@ from django.db.models import Count
 from .county_aliases import COUNTY_ALIAS
 from .throttles import PublicAnonRateThrottle
 from .serializers import PublicCrimeReportSerializer
+from rest_framework.pagination import PageNumberPagination
 from .alerting import create_alert_event
+from .models import Neighborhood, NeighborhoodMember, AlertSubscription
+from django.utils import timezone
+from datetime import timedelta
+from django.core.exceptions import ValidationError
 
 # Create your views here.
 
@@ -295,6 +301,210 @@ class PublicSummaryView(APIView):
         viewset = CrimeReportBookViewset(request=request)
         return CrimeReportBookViewset.summary(viewset, request)
 
+class PublicReportsView(APIView):
+    throttle_classes = [PublicAnonRateThrottle]
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        qs = CrimeReportBook.objects.all()
+        search = request.query_params.get('search')
+        ordering = request.query_params.get('ordering') or '-date_updated'
+        county = request.query_params.get('county')
+
+        if search:
+            from django.db.models import Q
+            qs = qs.filter(
+                Q(name_of_crime__icontains=search) |
+                Q(description__icontains=search) |
+                Q(location_name__icontains=search)
+            )
+        if county:
+            from django.db.models import Q
+            qs = qs.filter(Q(county__icontains=county) | Q(location_name__icontains=county))
+
+        if ordering:
+            try:
+                qs = qs.order_by(ordering)
+            except Exception:
+                pass
+
+        paginator = PageNumberPagination()
+        page = paginator.paginate_queryset(qs, request)
+        rows = []
+        for obj in page:
+            rows.append({
+                'id': obj.id,
+                'name_of_crime': obj.name_of_crime,
+                'description': obj.description,
+                'location_name': obj.location_name,
+                'county': obj.county,
+                'date_updated': obj.date_updated,
+                'category_of_crime_name': obj.category_of_crime.crime_category if obj.category_of_crime_id else None,
+                'occurance_book_number': obj.occurance_book_number,
+            })
+        return paginator.get_paginated_response(rows)
+
+    def post(self, request):
+        hp = str(request.data.get('honeypot') or '')
+        if hp.strip():
+            return Response({'detail': 'invalid submission'}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            ca = int(request.data.get('captcha_a') or 0)
+            cb = int(request.data.get('captcha_b') or 0)
+            ans = int(request.data.get('captcha_answer') or -1)
+            if ca + cb != ans:
+                return Response({'detail': 'human check failed'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception:
+            return Response({'detail': 'human check failed'}, status=status.HTTP_400_BAD_REQUEST)
+        name = request.data.get('name_of_crime')
+        category_id = request.data.get('category_of_crime')
+        if not name or not category_id:
+            return Response({'detail': 'name_of_crime and category_of_crime are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .models import CrimeCategory
+            cat = CrimeCategory.objects.get(id=int(category_id))
+        except Exception:
+            return Response({'detail': 'invalid category_of_crime'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Normalize optional inputs: treat empty strings as None
+        def none_if_empty(x):
+            return (None if (x is None or (isinstance(x, str) and x.strip() == '')) else x)
+
+        # Build instance with safe defaults
+        obj = CrimeReportBook(
+            name_of_crime=str(name),
+            description=none_if_empty(request.data.get('description')),
+            location_name=none_if_empty(request.data.get('location_name')),
+            location_description=none_if_empty(request.data.get('location_description')),
+            county=none_if_empty(request.data.get('county')),
+            category_of_crime=cat,
+        )
+        # Optional coordinates
+        try:
+            lat = request.data.get('latitude')
+            lon = request.data.get('longitude')
+            if lat is not None and lon is not None:
+                from decimal import Decimal, ROUND_HALF_UP
+                q = Decimal('0.000001')
+                obj.latitude = Decimal(str(lat)).quantize(q, rounding=ROUND_HALF_UP)
+                obj.longitude = Decimal(str(lon)).quantize(q, rounding=ROUND_HALF_UP)
+        except Exception:
+            pass
+        # Ensure optional fields do not fail validation when blank strings are posted
+        obj.age = none_if_empty(request.data.get('age'))
+        obj.name_of_criminal = none_if_empty(request.data.get('name_of_criminal'))
+        obj.criminal_id_number = none_if_empty(request.data.get('criminal_id_number'))
+        doa = request.data.get('date_of_arrest')
+        if doa and isinstance(doa, str) and doa.strip():
+            try:
+                from datetime import date
+                obj.date_of_arrest = date.fromisoformat(doa)
+            except Exception:
+                obj.date_of_arrest = None
+        else:
+            obj.date_of_arrest = None
+        # Persist (skip full_clean to avoid blank-string validation on optional fields)
+        try:
+            obj.save()
+        except Exception as e:
+            return Response({'detail': f'Failed to save: {e}'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            create_alert_event(obj, 'created', note='Report created anonymously')
+        except Exception:
+            pass
+
+        return Response({
+            'id': obj.id,
+            'occurance_book_number': obj.occurance_book_number,
+            'name_of_crime': obj.name_of_crime,
+            'location_name': obj.location_name,
+            'county': obj.county,
+            'date_updated': obj.date_updated,
+            'category_of_crime_name': obj.category_of_crime.crime_category,
+        }, status=status.HTTP_201_CREATED)
+
+class PublicSubCountiesGeoJSONView(APIView):
+    throttle_classes = [PublicAnonRateThrottle]
+    permission_classes = [permissions.AllowAny]
+
+    _CACHE = None
+    _CACHE_TS = 0
+    _CACHE_TTL = 60 * 60 * 24 * 7
+
+    def get(self, request):
+        import time
+        import os
+        from django.conf import settings
+        now = int(time.time())
+        try:
+            if self._CACHE and (now - self._CACHE_TS) < self._CACHE_TTL:
+                return Response(self._CACHE)
+        except Exception:
+            pass
+
+        primary = 'https://ckan.africadatahub.org/dataset/ebfdedaa-b9c4-442e-9144-72f2303105c5/resource/650999c2-c1f7-4acb-9bbb-d3af84a6a04b/download/kenya-subcounties-simplified.geojson'
+        fallback = 'https://raw.githubusercontent.com/Mondieki/kenya-counties-subcounties/master/geojson/subcounties.geojson'
+        persisted_path = os.path.join(getattr(settings, 'MEDIA_ROOT', settings.BASE_DIR), 'subcounties.geojson')
+
+        def fetch_json(url: str):
+            import requests
+            headers = {'Accept': 'application/json'}
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+
+        data = None
+        # Try external sources
+        try:
+            data = fetch_json(primary)
+        except Exception:
+            try:
+                data = fetch_json(fallback)
+            except Exception:
+                try:
+                    if os.path.exists(persisted_path):
+                        import json
+                        with open(persisted_path, 'r', encoding='utf-8') as f:
+                            data = json.load(f)
+                    else:
+                        return Response({'detail': 'Failed to load sub-counties'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+                except Exception:
+                    return Response({'detail': 'Failed to load sub-counties'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            self._CACHE = data
+            self._CACHE_TS = now
+            try:
+                import json
+                os.makedirs(os.path.dirname(persisted_path), exist_ok=True)
+                with open(persisted_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        return Response(data)
+
+class CountyAliasesView(APIView):
+    throttle_classes = [PublicAnonRateThrottle]
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        import json
+        import hashlib
+        aliases = COUNTY_ALIAS
+        payload = json.dumps(aliases, sort_keys=True, separators=(",", ":"))
+        etag = hashlib.md5(payload.encode("utf-8")).hexdigest()
+        inm = request.headers.get("If-None-Match") or request.META.get("HTTP_IF_NONE_MATCH")
+        if inm and inm == etag:
+            return Response(status=status.HTTP_304_NOT_MODIFIED)
+        resp = Response({"aliases": aliases})
+        resp["ETag"] = etag
+        return resp
+
 # CRIME WITNESS API
 class CrimeWitnessViewset(ModelViewSet):
     serializer_class = CrimeWitnessSerializer
@@ -322,7 +532,6 @@ class AuthMeView(APIView):
 
 
 class AlertEventViewSet(ModelViewSet):
-    """API endpoint for viewing alert events (superusers only)"""
     serializer_class = AlertEventSerializer
     queryset = AlertEvent.objects.all()
     permission_classes = [permissions.IsAdminUser]  # Only superusers
@@ -336,6 +545,176 @@ class AlertEventViewSet(ModelViewSet):
         'incident': ['exact'],
     }
     ordering = ['-created_at']
+
+    @action(detail=False, methods=['post'])
+    def enqueue(self, request):
+        from .tasks import send_notification_task
+        incident_id = request.data.get('incident_id')
+        event_type = request.data.get('event_type')
+        note = request.data.get('note', '')
+
+        if not incident_id or not event_type:
+            return Response({'detail': 'incident_id and event_type are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Try asynchronous Celery dispatch
+        event_id = None
+        try:
+            async_res = send_notification_task.delay(int(incident_id), str(event_type), str(note))
+            event_id = async_res.get(timeout=10)
+        except Exception:
+            # Fallback to synchronous dispatch
+            try:
+                event_id = send_notification_task(int(incident_id), str(event_type), str(note))
+            except Exception as e:
+                return Response({'detail': f'Failed to enqueue: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        return Response({'event_id': event_id}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='retry_failed')
+    def retry_failed(self, request):
+        from .tasks import retry_failed_alerts
+        try:
+            async_res = retry_failed_alerts.delay()
+            msg = async_res.get(timeout=10)
+            return Response({'detail': msg})
+        except Exception:
+            try:
+                msg = retry_failed_alerts()
+                return Response({'detail': msg})
+            except Exception as e:
+                return Response({'detail': f'Failed to retry: {e}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class NeighborhoodViewSet(ModelViewSet):
+    serializer_class = NeighborhoodSerializer
+    queryset = Neighborhood.objects.all()
+    permission_classes = [permissions.IsAuthenticated]
+    search_fields = ['name', 'invite_code']
+    ordering_fields = ['created_at', 'name']
+    filterset_fields = ['name']
+
+    @action(detail=True, methods=['post'])
+    def join(self, request, pk=None):
+        user = request.user
+        nb = self.get_object()
+        # optional invite_code check
+        code = request.data.get('invite_code')
+        if nb.invite_code and code and code != nb.invite_code:
+            return Response({'detail': 'Invalid invite code'}, status=status.HTTP_400_BAD_REQUEST)
+        mem, _ = NeighborhoodMember.objects.get_or_create(neighborhood=nb, user=user)
+        return Response(NeighborhoodMemberSerializer(mem).data, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['get'])
+    def contains_point(self, request):
+        try:
+            lat = float(request.query_params.get('lat'))
+            lon = float(request.query_params.get('lon'))
+        except Exception:
+            return Response({'detail': 'lat and lon are required'}, status=status.HTTP_400_BAD_REQUEST)
+        matches = []
+        for nb in Neighborhood.objects.exclude(polygon__isnull=True):
+            try:
+                poly = nb.polygon
+                # naive point-in-polygon for simple Polygon coordinates [[lon, lat], ...]
+                coords = poly.get('coordinates') if poly else None
+                if not coords:
+                    continue
+                # handle Polygon (first ring)
+                ring = coords[0]
+                inside = False
+                j = len(ring) - 1
+                for i in range(len(ring)):
+                    xi, yi = float(ring[i][0]), float(ring[i][1])
+                    xj, yj = float(ring[j][0]), float(ring[j][1])
+                    intersect = ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / (yj - yi + 1e-9) + xi)
+                    if intersect:
+                        inside = not inside
+                    j = i
+                if inside:
+                    matches.append(nb.id)
+            except Exception:
+                continue
+        return Response({'neighborhood_ids': matches})
+
+    @action(detail=False, methods=['get'], url_path='my')
+    def my(self, request):
+        qs = NeighborhoodMember.objects.filter(user=request.user)
+        data = NeighborhoodMemberSerializer(qs, many=True).data
+        return Response(data)
+
+    @action(detail=True, methods=['get'])
+    def alerts(self, request, pk=None):
+        nb = self.get_object()
+        points = []
+        if nb.polygon and isinstance(nb.polygon, dict):
+            coords = nb.polygon.get('coordinates')
+            if coords:
+                ring = coords[0]
+                for obj in CrimeReportBook.objects.exclude(latitude__isnull=True).exclude(longitude__isnull=True):
+                    lat = float(obj.latitude)
+                    lon = float(obj.longitude)
+                    inside = False
+                    j = len(ring) - 1
+                    for i in range(len(ring)):
+                        xi = float(ring[i][0])
+                        yi = float(ring[i][1])
+                        xj = float(ring[j][0])
+                        yj = float(ring[j][1])
+                        intersect = ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / (yj - yi + 1e-9) + xi)
+                        if intersect:
+                            inside = not inside
+                        j = i
+                    if inside:
+                        points.append(obj)
+        ser = PublicCrimeReportSerializer(points, many=True)
+        return Response(ser.data)
+
+    @action(detail=True, methods=['post'])
+    def leave(self, request, pk=None):
+        nb = self.get_object()
+        NeighborhoodMember.objects.filter(neighborhood=nb, user=request.user).delete()
+        return Response({'detail': 'left'})
+
+    @action(detail=False, methods=['get'], url_path='alerts_counts')
+    def alerts_counts(self, request):
+        results = []
+        days = request.query_params.get('days')
+        since = None
+        try:
+            if days:
+                since = timezone.now() - timedelta(days=int(days))
+        except Exception:
+            since = None
+        for nb in Neighborhood.objects.all():
+            count = 0
+            try:
+                poly = nb.polygon
+                coords = poly.get('coordinates') if poly else None
+                if coords:
+                    ring = coords[0]
+                    qs = CrimeReportBook.objects.exclude(latitude__isnull=True).exclude(longitude__isnull=True)
+                    if since:
+                        qs = qs.filter(date_updated__gte=since)
+                    for obj in qs:
+                        lat = float(obj.latitude)
+                        lon = float(obj.longitude)
+                        inside = False
+                        j = len(ring) - 1
+                        for i in range(len(ring)):
+                            xi = float(ring[i][0])
+                            yi = float(ring[i][1])
+                            xj = float(ring[j][0])
+                            yj = float(ring[j][1])
+                            intersect = ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / (yj - yi + 1e-9) + xi)
+                            if intersect:
+                                inside = not inside
+                            j = i
+                        if inside:
+                            count += 1
+            except Exception:
+                pass
+            results.append({'id': nb.id, 'count': count})
+        return Response({'results': results})
 
 
 class RegistrationView(APIView):
@@ -383,3 +762,60 @@ class RegistrationView(APIView):
             }
         }
         return Response(data, status=status.HTTP_201_CREATED)
+
+
+class SubscribeAlertsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        subs = AlertSubscription.objects.filter(user=request.user)
+        rows = [
+            {
+                'id': s.id,
+                'county': s.county,
+                'channel': getattr(s, 'channel', 'sms'),
+                'enabled': getattr(s, 'enabled', True),
+                'quiet_hours_start': getattr(s, 'quiet_hours_start', None),
+                'quiet_hours_end': getattr(s, 'quiet_hours_end', None),
+            }
+            for s in subs
+        ]
+        return Response({'results': rows})
+
+    def post(self, request):
+        county = request.data.get('county')
+        channel = request.data.get('channel') or 'sms'
+        sub, _ = AlertSubscription.objects.get_or_create(user=request.user, county=county or None, defaults={'channel': channel})
+        sub.enabled = True
+        sub.channel = channel
+        sub.save()
+        return Response({'id': sub.id, 'detail': 'subscribed'})
+
+    def delete(self, request):
+        sub_id = request.data.get('id')
+        try:
+            s = AlertSubscription.objects.get(id=int(sub_id), user=request.user)
+            s.delete()
+            return Response({'detail': 'unsubscribed'})
+        except Exception:
+            return Response({'detail': 'not found'}, status=status.HTTP_404_NOT_FOUND)
+class UsersRolesView(APIView):
+    permission_classes = [permissions.IsAdminUser]
+
+    def get(self, request):
+        User = get_user_model()
+        rows = []
+        by_role = {}
+        for u in User.objects.all().order_by('username'):
+            roles = list(u.groups.values_list('name', flat=True))
+            for r in roles:
+                by_role[r] = by_role.get(r, 0) + 1
+            rows.append({
+                'id': u.id,
+                'username': u.username,
+                'email': u.email,
+                'roles': roles,
+                'is_superuser': u.is_superuser,
+                'is_staff': u.is_staff,
+            })
+        return Response({'results': rows, 'total': len(rows), 'by_role': by_role})

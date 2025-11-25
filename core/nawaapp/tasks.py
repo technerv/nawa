@@ -1,6 +1,3 @@
-"""
-Celery tasks for async alert processing, SLA monitoring, and daily summaries.
-"""
 import logging
 from datetime import datetime, timedelta
 from django.utils import timezone
@@ -15,11 +12,19 @@ logger = logging.getLogger(__name__)
 
 
 @shared_task
+def send_notification_task(incident_id: int, event_type: str, note: str = '') -> int:
+    try:
+        incident = CrimeReportBook.objects.get(id=incident_id)
+    except CrimeReportBook.DoesNotExist:
+        logger.error("Incident %s not found for send_notification_task", incident_id)
+        return 0
+
+    event = create_alert_event(incident, event_type, note)
+    return int(event.id)
+
+
+@shared_task
 def check_sla_breaches():
-    """
-    Check for incidents that have exceeded SLA thresholds and re-alert.
-    Runs every 10 minutes.
-    """
     now = timezone.now()
     # SLA thresholds (in minutes)
     sla_thresholds = {
@@ -75,10 +80,6 @@ def check_sla_breaches():
 
 @shared_task
 def send_daily_summary():
-    """
-    Send daily summary email to Admins and Dispatchers.
-    Runs daily at 06:00 (configure in Celery beat schedule).
-    """
     yesterday = timezone.now() - timedelta(days=1)
     yesterday_start = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday_end = yesterday.replace(hour=23, minute=59, second=59, microsecond=999999)
@@ -176,7 +177,7 @@ def retry_failed_alerts():
         dispatch_results = event.payload.get('dispatch_results', {})
         for user_id_str, channels in dispatch_results.items():
             # Check if any channel failed
-            failed_channels = [ch for ch, success in channels.items() if not success]
+            failed_channels = [ch for ch, meta in channels.items() if not meta.get('success')]
             if failed_channels:
                 try:
                     user_id = int(user_id_str)
@@ -194,3 +195,35 @@ def retry_failed_alerts():
 
     return f"Retried {retried} failed alerts"
 
+@shared_task(bind=True, ignore_result=True)
+def warm_subcounties_cache(self):
+    try:
+        import requests
+        headers = {'Accept': 'application/json'}
+        urls = [
+            'https://ckan.africadatahub.org/dataset/ebfdedaa-b9c4-442e-9144-72f2303105c5/resource/650999c2-c1f7-4acb-9bbb-d3af84a6a04b/download/kenya-subcounties-simplified.geojson',
+            'https://raw.githubusercontent.com/Mondieki/kenya-counties-subcounties/master/geojson/subcounties.geojson',
+        ]
+        data = None
+        for url in urls:
+            try:
+                resp = requests.get(url, headers=headers, timeout=15)
+                resp.raise_for_status()
+                data = resp.json()
+                break
+            except Exception:
+                continue
+        if not data:
+            logger.warning('Warm cache: failed to fetch subcounties from external sources')
+            return 'no data'
+        from django.conf import settings
+        import os, json
+        target = os.path.join(getattr(settings, 'MEDIA_ROOT', settings.BASE_DIR), 'subcounties.geojson')
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        with open(target, 'w', encoding='utf-8') as f:
+            json.dump(data, f)
+        logger.info('Warm cache: subcounties persisted to %s', target)
+        return 'ok'
+    except Exception as e:
+        logger.error('Warm cache: error %s', e)
+        return 'error'

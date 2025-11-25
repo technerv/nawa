@@ -262,3 +262,24 @@ class CrimeReportBookAuditLog(models.Model):
 
     def __str__(self):
         return f"{self.report.occurance_book_number}: {self.from_status} -> {self.to_status}"
+class Neighborhood(models.Model):
+    name = models.CharField(max_length=200)
+    center_lat = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    center_lon = models.DecimalField(max_digits=9, decimal_places=6, null=True, blank=True)
+    invite_code = models.CharField(max_length=32, null=True, blank=True, unique=True)
+    polygon = models.JSONField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class NeighborhoodMember(models.Model):
+    neighborhood = models.ForeignKey('Neighborhood', on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='neighborhood_memberships')
+    role = models.CharField(max_length=32, default='member')
+    joined_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('neighborhood', 'user')
+        ordering = ['-joined_at']

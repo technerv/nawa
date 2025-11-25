@@ -1,6 +1,7 @@
 import { hasAnyRole, ROLES } from '../lib/roles'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createCrimeCategory, listCrimeCategories } from '../api/crime'
+import { showToast } from '../lib/toast'
 import { FormEvent, useState } from 'react'
 
 export default function CategoriesPage() {
@@ -21,6 +22,7 @@ export default function CategoriesPage() {
 			setCrimeCategory('')
 			setCrimeShortCode('')
 			queryClient.invalidateQueries({ queryKey: ['categories'] })
+			showToast('Category created', 'success')
 		}
 	})
 
@@ -34,26 +36,28 @@ export default function CategoriesPage() {
 		<div>
 			<h2>Crime Categories</h2>
 
-			<div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+			<div className="card mb-3"><div style={{ display: 'flex', gap: 8 }}>
 				<input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
 				<button onClick={() => { setPage(1); refetch() }}>Search</button>
 			</div>
+			<small style={{ color: '#cbd5e1', display: 'block', marginTop: -8, marginBottom: 0 }}>Use keywords to find categories. Admins can create new ones.</small></div>
 
 			{canCreate ? (
-				<form onSubmit={onSubmit} style={{ display: 'grid', gap: 8, maxWidth: 480, marginBottom: 16 }}>
-					<input required placeholder="Category name" value={crime_category} onChange={(e) => setCrimeCategory(e.target.value)} />
-					<input required placeholder="Short code (3 letters)" value={crime_short_code} onChange={(e) => setCrimeShortCode(e.target.value)} />
-					<button type="submit" disabled={createMut.isLoading}>Create</button>
+				<div className="card mb-3"><form onSubmit={onSubmit} style={{ display: 'grid', gap: 8, maxWidth: 480 }}>
+					<input required name="crime_category" placeholder="Category name" value={crime_category} onChange={(e) => setCrimeCategory(e.target.value)} />
+					<input required name="crime_short_code" placeholder="Short code (3 letters)" value={crime_short_code} onChange={(e) => setCrimeShortCode(e.target.value)} />
+					<button type="submit" disabled={createMut.isPending}>Create</button>
 					{createMut.isError && <p style={{ color: 'crimson' }}>{(createMut.error as any)?.response?.data?.crime_short_code?.[0] ?? 'Create failed'}</p>}
-				</form>
+				</form></div>
 			) : (
-				<p style={{ color: '#666', marginBottom: 16 }}>You do not have permission to create categories.</p>
+				<p style={{ color: '#cbd5e1', marginBottom: 16 }}>You do not have permission to create categories.</p>
 			)}
 
 			{isLoading && <p>Loading...</p>}
-			{isError && <p style={{ color: 'crimson' }}>Failed to load categories</p>}
+			{isError && <p style={{ color: '#fecaca' }}>Failed to load categories</p>}
 			{data && (
 				<>
+					<div className="card">
 					<table width="100%" cellPadding={8} style={{ borderCollapse: 'collapse' }}>
 						<thead>
 							<tr>
@@ -72,6 +76,7 @@ export default function CategoriesPage() {
 							))}
 						</tbody>
 					</table>
+					</div>
 					<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
 						<button disabled={!data.previous || page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
 							Prev
@@ -80,11 +85,10 @@ export default function CategoriesPage() {
 						<button disabled={!data.next} onClick={() => setPage((p) => p + 1)}>
 							Next
 						</button>
-						{typeof data.count === 'number' && <span style={{ color: '#666' }}>Total: {data.count}</span>}
+						{typeof data.count === 'number' && <span style={{ color: '#cbd5e1' }}>Total: {data.count}</span>}
 					</div>
 				</>
 			)}
 		</div>
 	)
 }
-

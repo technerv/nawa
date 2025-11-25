@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog, UserProfile, AlertSubscription, AlertEvent
+from .models import CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog, UserProfile, AlertSubscription, AlertEvent, Neighborhood, NeighborhoodMember
 # from leaflet.admin import LeafletGeoAdmin
 # Register your models here.
 #admin.site.register(CrimeReportBook)
@@ -104,17 +104,36 @@ class AlertEventAdmin(admin.ModelAdmin):
     recipient_count.short_description = 'Recipients'
 
     def dispatch_summary(self, obj):
-        """Show dispatch results summary"""
         results = obj.payload.get('dispatch_results', {})
         if not results:
             return "No dispatch results"
         summary = []
         for uid, channels in results.items():
-            success = [ch for ch, ok in channels.items() if ok]
-            failed = [ch for ch, ok in channels.items() if not ok]
+            success = []
+            failed = []
+            for ch, meta in channels.items():
+                ok = meta.get('success') if isinstance(meta, dict) else bool(meta)
+                if ok:
+                    success.append(ch)
+                else:
+                    failed.append(ch)
             if success:
                 summary.append(f"User {uid}: ✓ {', '.join(success)}")
             if failed:
                 summary.append(f"User {uid}: ✗ {', '.join(failed)}")
         return "\n".join(summary) if summary else "Pending dispatch"
     dispatch_summary.short_description = 'Dispatch Summary'
+
+
+@admin.register(Neighborhood)
+class NeighborhoodAdmin(admin.ModelAdmin):
+    list_display = ('name', 'invite_code', 'center_lat', 'center_lon', 'created_at')
+    search_fields = ('name', 'invite_code')
+    list_filter = ('created_at',)
+
+
+@admin.register(NeighborhoodMember)
+class NeighborhoodMemberAdmin(admin.ModelAdmin):
+    list_display = ('neighborhood', 'user', 'role', 'joined_at')
+    search_fields = ('neighborhood__name', 'user__username')
+    list_filter = ('role', 'joined_at')
