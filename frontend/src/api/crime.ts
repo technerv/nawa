@@ -36,16 +36,18 @@ export interface Paginated<T> {
 }
 
 export interface CrimeReportMapPoint {
-	id: number
-	occurance_book_number: string
-	name_of_crime: string
-	severity: string
-	status: string
-	latitude: number
-	longitude: number
-	location_name?: string | null
-	location_description?: string | null
-	date_updated: string
+    id: number
+    occurance_book_number: string
+    name_of_crime: string
+    category_of_crime_name?: string | null
+    severity: string
+    status: string
+    latitude: number
+    longitude: number
+    location_name?: string | null
+    location_description?: string | null
+    county?: string | null
+    date_updated: string
 }
 
 export async function listCrimeCategories(params?: { search?: string; page?: number }) {

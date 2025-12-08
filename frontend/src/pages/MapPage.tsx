@@ -23,6 +23,8 @@ export default function MapPage() {
     const [countyGeo, setCountyGeo] = useState<any | null>(null)
     const [showSubCounties, setShowSubCounties] = useState<boolean>(false)
     const [subCountyGeo, setSubCountyGeo] = useState<any | null>(null)
+    const [showConstituencies, setShowConstituencies] = useState<boolean>(false)
+    const [constituencyGeo, setConstituencyGeo] = useState<any | null>(null)
 
     const query = useQuery({
         queryKey: ['map', { severity, status }],
@@ -92,7 +94,7 @@ export default function MapPage() {
 
     // Fetch sub-county GeoJSON (prefer backend endpoint, then external fallbacks)
     useEffect(() => {
-        if (!showSubCounties || subCountyGeo) return
+        if (subCountyGeo) return
         const controller = new AbortController()
         const backend = `${API_BASE_URL}/public/subcounties_geojson/`
         const primary = 'https://ckan.africadatahub.org/dataset/ebfdedaa-b9c4-442e-9144-72f2303105c5/resource/650999c2-c1f7-4acb-9bbb-d3af84a6a04b/download/kenya-subcounties-simplified.geojson'
@@ -112,7 +114,25 @@ export default function MapPage() {
                     })
             })
         return () => controller.abort()
-    }, [showSubCounties, subCountyGeo])
+    }, [subCountyGeo])
+
+    // Fetch constituencies GeoJSON (prefer backend endpoint, then external fallback)
+    useEffect(() => {
+        if (!showConstituencies || constituencyGeo) return
+        const controller = new AbortController()
+        const backend = `${API_BASE_URL}/public/constituencies_geojson/`
+        const fallback = 'https://raw.githubusercontent.com/mikelmaron/kenya-election-data/master/data/constituencies.geojson'
+        fetch(backend, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+            .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+            .then((data) => setConstituencyGeo(data))
+            .catch(() => {
+                fetch(fallback, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+                    .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
+                    .then((data) => setConstituencyGeo(data))
+                    .catch(() => { showToast('Failed to load constituencies', 'error') })
+            })
+        return () => controller.abort()
+    }, [showConstituencies, constituencyGeo])
 
     const countyCounts = useMemo(() => {
         const m: Record<string, number> = {}
@@ -190,6 +210,10 @@ export default function MapPage() {
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <input type="checkbox" checked={showSubCounties} onChange={(e) => setShowSubCounties(e.target.checked)} />
                     Show sub-counties
+                </label>
+                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <input type="checkbox" checked={showConstituencies} onChange={(e) => setShowConstituencies(e.target.checked)} />
+                    Show constituencies
                 </label>
                 <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <input type="checkbox" checked={colorByDensity} onChange={(e) => setColorByDensity(e.target.checked)} />
@@ -276,13 +300,20 @@ export default function MapPage() {
                             style={() => ({ color: '#059669', weight: 1, fillOpacity: 0.03 })}
                             onEachFeature={(feature: any, layer: any) => {
                                 const props = (feature && feature.properties) || {}
-                                const candidates = ['name','NAME','SubCounty','SUBCOUNTY','subcounty','SC_NAME','SCNAME','Sub_County','SUB_COUNTY','SUB_CNTY']
-                                let raw = ''
-                                for (const k of candidates) {
-                                    const v = props[k]
-                                    if (typeof v === 'string' && v.trim() && !/^sub[- ]?county$/i.test(v)) { raw = v.trim(); break }
-                                }
-                                const name = raw || 'Sub-County'
+                                const name = extractSubCountyName(props)
+                                try { layer.bindTooltip(name, { sticky: true }) } catch {}
+                                layer.bindPopup(name)
+                                try { layer.on('click', () => { try { (layer as any)._map.fitBounds(layer.getBounds(), { padding: [20, 20] }) } catch {} }) } catch {}
+                            }}
+                        />
+                    )}
+                    {showConstituencies && constituencyGeo && (
+                        <GeoJSON
+                            data={constituencyGeo}
+                            style={() => ({ color: '#0ea5e9', weight: 1, fillOpacity: 0.03 })}
+                            onEachFeature={(feature: any, layer: any) => {
+                                const props = (feature && feature.properties) || {}
+                                const name = extractConstituencyName(props)
                                 try { layer.bindTooltip(name, { sticky: true }) } catch {}
                                 layer.bindPopup(name)
                                 try { layer.on('click', () => { try { (layer as any)._map.fitBounds(layer.getBounds(), { padding: [20, 20] }) } catch {} }) } catch {}
@@ -367,11 +398,16 @@ export default function MapPage() {
                             if (s === 'critical') return '#7c3aed'
                             return '#2563eb'
                         }
-                        const icon = L.divIcon({ className: 'leaflet-div-icon', html: `<span class="pulse-marker" style="--pulse-color:${sc(point.severity)}"></span>`, iconSize: [16,16], iconAnchor: [8,8] })
+                        const icon = L.divIcon({ className: 'leaflet-div-icon', html: `<span class=\"pulse-marker\" style=\"--pulse-color:${sc(point.severity)}\"></span>`, iconSize: [16,16], iconAnchor: [8,8] })
+                        const scName = findSubCountyForPoint(point.latitude, point.longitude, subCountyGeo)
+                        const countyName = normalizeCountyName(point.county || scName || '')
+                        const coords = `${point.latitude?.toFixed ? point.latitude.toFixed(6) : point.latitude}, ${point.longitude?.toFixed ? point.longitude.toFixed(6) : point.longitude}`
                         return (
                             <Marker key={point.id} position={[point.latitude, point.longitude]} icon={icon}>
                                 <Popup>
                                     <strong>{point.name_of_crime}</strong>
+                                    <br />
+                                    Type: {point.category_of_crime_name || '—'}
                                     <br />
                                     OB: {point.occurance_book_number}
                                     <br />
@@ -379,9 +415,11 @@ export default function MapPage() {
                                     <br />
                                     Status: {point.status}
                                     <br />
+                                    County: {countyName || '—'}
+                                    <br />
                                     {point.location_name && (
                                         <>
-                                            Location: {point.location_name}
+                                            Location: {point.location_name} ({coords})
                                             <br />
                                         </>
                                     )}
@@ -391,6 +429,8 @@ export default function MapPage() {
                                             <br />
                                         </>
                                     )}
+                                    Sub-County: {scName || '—'}
+                                    <br />
                                     Updated: {new Date(point.date_updated).toLocaleString()}
                                 </Popup>
                             </Marker>
@@ -400,4 +440,118 @@ export default function MapPage() {
 			</div>
 		</div>
 	)
+}
+function extractSubCountyName(props: any): string {
+    if (!props || typeof props !== 'object') return 'Sub-County'
+    const candidates = ['name','NAME','SubCounty','SUBCOUNTY','subcounty','SC_NAME','SCNAME','Sub_County','SUB_COUNTY','SUB_CNTY','ADM2_EN','ADM2_REF','ADM2_PCODE','DISTRICT','Constituency','CONSTITUENCY','Ward','WARD','Division','DIVISION']
+    for (const k of candidates) {
+        const v = props[k]
+        if (typeof v === 'string') {
+            const s = v.trim()
+            if (s && !/^sub[\- ]?county$/i.test(s) && !/^unknown$/i.test(s) && !/^none$/i.test(s) && !/^null$/i.test(s)) return s
+        }
+    }
+    const keys = Object.keys(props)
+    for (const k of keys) {
+        const v = props[k]
+        if (typeof v === 'string') {
+            const s = v.trim()
+            const kl = k.toLowerCase()
+            if (s && (kl.includes('name') || kl.includes('subcounty') || kl.includes('sub_county') || kl.includes('ward') || kl.includes('division'))) return s
+        }
+    }
+    let best = ''
+    for (const k of keys) {
+        const v = props[k]
+        if (typeof v === 'string') {
+            const s = v.trim()
+            if (s && /[a-zA-Z]/.test(s) && s.length > best.length && !/kenya/i.test(s) && !/^sub[\- ]?county$/i.test(s)) best = s
+        }
+    }
+    return best || 'Sub-County'
+}
+function extractConstituencyName(props: any): string {
+    if (!props || typeof props !== 'object') return 'Constituency'
+    const candidates = ['Constituency','CONSTITUENCY','constituency','name','NAME','ADM2_EN','DISTRICT']
+    for (const k of candidates) {
+        const v = (props as any)[k]
+        if (typeof v === 'string') {
+            const s = v.trim()
+            if (s && !/^constituency$/i.test(s) && !/^unknown$/i.test(s) && !/^none$/i.test(s) && !/^null$/i.test(s)) return s
+        }
+    }
+    const keys = Object.keys(props)
+    for (const k of keys) {
+        const v = (props as any)[k]
+        if (typeof v === 'string') {
+            const s = v.trim()
+            const kl = k.toLowerCase()
+            if (s && (kl.includes('constituency') || kl.includes('name'))) return s
+        }
+    }
+    let best = ''
+    for (const k of keys) {
+        const v = (props as any)[k]
+        if (typeof v === 'string') {
+            const s = v.trim()
+            if (s && /[a-zA-Z]/.test(s) && s.length > best.length && !/kenya/i.test(s) && !/^constituency$/i.test(s)) best = s
+        }
+    }
+    return best || 'Constituency'
+}
+function pointInRing(lon: number, lat: number, ring: any[]): boolean {
+    let inside = false
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+        const xi = ring[i][0], yi = ring[i][1]
+        const xj = ring[j][0], yj = ring[j][1]
+        const intersect = ((yi > lat) !== (yj > lat)) && (lon < (xj - xi) * (lat - yi) / ((yj - yi) || 1e-12) + xi)
+        if (intersect) inside = !inside
+    }
+    return inside
+}
+function geometryContains(geometry: any, lat: number, lon: number): boolean {
+    if (!geometry || !geometry.type || !geometry.coordinates) return false
+    const ptLon = lon, ptLat = lat
+    if (geometry.type === 'Polygon') {
+        const rings = geometry.coordinates
+        if (!Array.isArray(rings) || rings.length === 0) return false
+        const outer = rings[0]
+        if (!pointInRing(ptLon, ptLat, outer)) return false
+        for (let r = 1; r < rings.length; r++) {
+            if (pointInRing(ptLon, ptLat, rings[r])) return false
+        }
+        return true
+    }
+    if (geometry.type === 'MultiPolygon') {
+        const polys = geometry.coordinates
+        for (const poly of polys) {
+            const rings = poly
+            if (!Array.isArray(rings) || rings.length === 0) continue
+            const outer = rings[0]
+            if (!pointInRing(ptLon, ptLat, outer)) continue
+            let inHole = false
+            for (let r = 1; r < rings.length; r++) {
+                if (pointInRing(ptLon, ptLat, rings[r])) { inHole = true; break }
+            }
+            if (!inHole) return true
+        }
+        return false
+    }
+    return false
+}
+function findSubCountyForPoint(lat: number, lon: number, geo: any | null): string | null {
+    try {
+        const features = geo && (geo.features || geo.data?.features)
+        if (!features || !Array.isArray(features)) return null
+        for (const f of features) {
+            const g = f && f.geometry
+            if (!g) continue
+            if (geometryContains(g, lat, lon)) {
+                const props = (f && f.properties) || {}
+                const name = extractSubCountyName(props)
+                return name || null
+            }
+        }
+        return null
+    } catch { return null }
 }

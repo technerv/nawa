@@ -206,6 +206,7 @@ def create_alert_event(incident: CrimeReportBook, event_type: str, note: str = '
         'county': incident.county,
         'category': incident.category_of_crime.crime_category if incident.category_of_crime_id else None,
         'note': note,
+        'started_at': timezone.now().isoformat(),
     }
     event = AlertEvent.objects.create(
         incident=incident,
@@ -224,6 +225,19 @@ def create_alert_event(incident: CrimeReportBook, event_type: str, note: str = '
 
     # Store dispatch results in payload for audit
     event.payload['dispatch_results'] = dispatch_results
+    # Add completion timestamp and summary counters
+    try:
+        event.payload['completed_at'] = timezone.now().isoformat()
+        summary = {'success': 0, 'failed': 0, 'channels': {}}
+        for uid, chs in dispatch_results.items():
+            for ch, meta in chs.items():
+                ok = bool(meta.get('success'))
+                summary['success' if ok else 'failed'] += 1
+                summary['channels'][ch] = summary['channels'].get(ch, {'success': 0, 'failed': 0})
+                summary['channels'][ch]['success' if ok else 'failed'] += 1
+        event.payload['channels_summary'] = summary
+    except Exception:
+        pass
     event.save(update_fields=['payload'])
 
     logger.info(

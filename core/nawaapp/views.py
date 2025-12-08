@@ -135,12 +135,14 @@ class CrimeReportBookViewset(ModelViewSet):
                 'id': obj.id,
                 'occurance_book_number': obj.occurance_book_number,
                 'name_of_crime': obj.name_of_crime,
+                'category_of_crime_name': getattr(obj, 'category_of_crime_name', (obj.category_of_crime.crime_category if obj.category_of_crime_id else None)),
                 'severity': obj.severity,
                 'status': obj.status,
                 'latitude': float(obj.latitude),
                 'longitude': float(obj.longitude),
                 'location_name': obj.location_name,
                 'location_description': obj.location_description,
+                'county': obj.county,
                 'date_updated': obj.date_updated,
             }
             for obj in qs
@@ -184,16 +186,22 @@ class CrimeReportBookViewset(ModelViewSet):
         def normalize_county_name(name: str) -> str:
             if not name:
                 return 'Unknown'
-            key = name.strip().lower()
-            # strip "county" suffix to improve alias matching
-            key = key.replace(' county', '')
-            normalized = COUNTY_ALIAS.get(key)
-            if normalized:
-                return normalized
-            # Title-case and append "County" if it looks like a bare county name
-            title = name.strip().title()
+            import re
+            key = str(name).strip().lower()
+            key = re.sub(r"\s+county$", "", key)
+            base = key.replace('_', ' ').replace('-', ' ')
+            base = re.sub(r"\s+", " ", base).strip()
+            if base:
+                v = COUNTY_ALIAS.get(base)
+                if v:
+                    return v
+                dashed = base.replace(' ', '-')
+                v = COUNTY_ALIAS.get(dashed)
+                if v:
+                    return v
+            title = str(name).strip().title()
             if not title.endswith('County') and title not in ('Unknown',):
-                return f'{title} County'
+                return f"{title} County"
             return title
         raw = qs.values('county', 'location_name', 'severity')
         rows = []
@@ -488,6 +496,64 @@ class PublicSubCountiesGeoJSONView(APIView):
 
         return Response(data)
 
+class PublicConstituenciesGeoJSONView(APIView):
+    throttle_classes = [PublicAnonRateThrottle]
+    permission_classes = [permissions.AllowAny]
+
+    _CACHE = None
+    _CACHE_TS = 0
+    _CACHE_TTL = 60 * 60 * 24 * 7
+
+    def get(self, request):
+        import time
+        import os
+        from django.conf import settings
+        now = int(time.time())
+        try:
+            if self._CACHE and (now - self._CACHE_TS) < self._CACHE_TTL:
+                return Response(self._CACHE)
+        except Exception:
+            pass
+
+        primary = 'https://raw.githubusercontent.com/mikelmaron/kenya-election-data/master/data/constituencies.geojson'
+        persisted_path = os.path.join(getattr(settings, 'MEDIA_ROOT', settings.BASE_DIR), 'constituencies.geojson')
+
+        def fetch_json(url: str):
+            import requests
+            headers = {'Accept': 'application/json'}
+            resp = requests.get(url, headers=headers, timeout=10)
+            resp.raise_for_status()
+            return resp.json()
+
+        data = None
+        try:
+            data = fetch_json(primary)
+        except Exception:
+            try:
+                if os.path.exists(persisted_path):
+                    import json
+                    with open(persisted_path, 'r', encoding='utf-8') as f:
+                        data = json.load(f)
+                else:
+                    return Response({'detail': 'Failed to load constituencies'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            except Exception:
+                return Response({'detail': 'Failed to load constituencies'}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+
+        try:
+            self._CACHE = data
+            self._CACHE_TS = now
+            try:
+                import json
+                os.makedirs(os.path.dirname(persisted_path), exist_ok=True)
+                with open(persisted_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f)
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+        return Response(data)
+
 class CountyAliasesView(APIView):
     throttle_classes = [PublicAnonRateThrottle]
     permission_classes = [permissions.AllowAny]
@@ -495,7 +561,218 @@ class CountyAliasesView(APIView):
     def get(self, request):
         import json
         import hashlib
-        aliases = COUNTY_ALIAS
+        import os
+        from django.conf import settings
+        aliases = dict(COUNTY_ALIAS)
+        def norm_county(name):
+            if not name:
+                return ''
+            import re
+            key = str(name).strip().lower()
+            key = re.sub(r"\s+county$", "", key)
+            base = key.replace('_', ' ').replace('-', ' ')
+            base = re.sub(r"\s+", " ", base).strip()
+            if base:
+                v = COUNTY_ALIAS.get(base)
+                if v:
+                    return v
+                dashed = base.replace(' ', '-')
+                v = COUNTY_ALIAS.get(dashed)
+                if v:
+                    return v
+            title = str(name).strip().title()
+            return title if title.endswith('County') else f"{title} County"
+        def clean_name(s):
+            t = str(s or '').strip()
+            t = t.replace('_', ' ').replace('-', ' ').strip()
+            t = t.replace('SubCounty', '').replace('Sub-County', '').replace('Sub County', '')
+            t = t.replace('Constituency', '').replace('Ward', '').replace('Division', '')
+            t = t.strip()
+            return t
+        def extract_subcounty(props):
+            if not isinstance(props, dict):
+                return ''
+            candidates = ['name','NAME','SubCounty','SUBCOUNTY','subcounty','SC_NAME','SCNAME','Sub_County','SUB_COUNTY','SUB_CNTY','ADM2_EN','ADM2_REF','ADM2_PCODE','DISTRICT','Constituency','CONSTITUENCY','Ward','WARD','Division','DIVISION']
+            for k in candidates:
+                v = props.get(k)
+                if isinstance(v, str):
+                    s = clean_name(v)
+                    if s and s.lower() not in ('', 'subcounty', 'sub county', 'unknown', 'none', 'null'):
+                        return s
+            for k, v in (props.items() if isinstance(props, dict) else []):
+                if isinstance(v, str):
+                    s = clean_name(v)
+                    kl = str(k).lower()
+                    if s and (('name' in kl) or ('subcounty' in kl) or ('sub_county' in kl) or ('ward' in kl) or ('division' in kl)) and s.lower() not in ('', 'subcounty', 'sub county'):
+                        return s
+            return ''
+        def extract_county(props):
+            if not isinstance(props, dict):
+                return ''
+            candidates = ['COUNTY','County','COUNTY_NAM','COUNTY_NAME','ADM1_EN','ADM1_REF','ADM1_PCODE','ADMIN1','Adm1_name','ADMIN_L1','Province','PROVINCE']
+            for k in candidates:
+                v = props.get(k)
+                if isinstance(v, str):
+                    s = str(v).strip()
+                    if s:
+                        return s
+            for k, v in (props.items() if isinstance(props, dict) else []):
+                if isinstance(v, str):
+                    s = str(v).strip()
+                    kl = str(k).lower()
+                    if s and ('county' in kl or 'adm1' in kl):
+                        return s
+            return ''
+        try:
+            persisted_path = os.path.join(getattr(settings, 'MEDIA_ROOT', settings.BASE_DIR), 'subcounties.geojson')
+            data = None
+            if os.path.exists(persisted_path):
+                with open(persisted_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+            else:
+                try:
+                    import requests
+                    urls = [
+                        'https://ckan.africadatahub.org/dataset/ebfdedaa-b9c4-442e-9144-72f2303105c5/resource/650999c2-c1f7-4acb-9bbb-d3af84a6a04b/download/kenya-subcounties-simplified.geojson',
+                    ]
+                    for url in urls:
+                        try:
+                            resp = requests.get(url, headers={'Accept': 'application/json'}, timeout=10)
+                            resp.raise_for_status()
+                            data = resp.json()
+                            break
+                        except Exception:
+                            continue
+                    if data is not None:
+                        try:
+                            os.makedirs(os.path.dirname(persisted_path), exist_ok=True)
+                            with open(persisted_path, 'w', encoding='utf-8') as f:
+                                json.dump(data, f)
+                        except Exception:
+                            pass
+                except Exception:
+                    data = None
+            features = None
+            if data:
+                features = data.get('features') or (data.get('data') or {}).get('features')
+            if isinstance(features, list):
+                for ftr in features:
+                    props = (ftr or {}).get('properties') or {}
+                    sc = extract_subcounty(props)
+                    parent = extract_county(props)
+                    if sc and parent:
+                        aliases[sc.lower()] = norm_county(parent)
+                def point_in_ring(lon, lat, ring):
+                    inside = False
+                    j = len(ring) - 1
+                    for i in range(len(ring)):
+                        xi = float(ring[i][0]); yi = float(ring[i][1])
+                        xj = float(ring[j][0]); yj = float(ring[j][1])
+                        intersect = ((yi > lat) != (yj > lat)) and (lon < (xj - xi) * (lat - yi) / ((yj - yi) or 1e-12) + xi)
+                        if intersect:
+                            inside = not inside
+                        j = i
+                    return inside
+                def geometry_contains(geometry, lat, lon):
+                    if not geometry or not geometry.get('type') or not geometry.get('coordinates'):
+                        return False
+                    if geometry['type'] == 'Polygon':
+                        rings = geometry['coordinates']
+                        if not isinstance(rings, list) or not rings:
+                            return False
+                        outer = rings[0]
+                        if not point_in_ring(lon, lat, outer):
+                            return False
+                        for r in range(1, len(rings)):
+                            if point_in_ring(lon, lat, rings[r]):
+                                return False
+                        return True
+                    if geometry['type'] == 'MultiPolygon':
+                        polys = geometry['coordinates']
+                        for poly in polys:
+                            rings = poly
+                            if not isinstance(rings, list) or not rings:
+                                continue
+                            outer = rings[0]
+                            if not point_in_ring(lon, lat, outer):
+                                continue
+                            in_hole = False
+                            for r in range(1, len(rings)):
+                                if point_in_ring(lon, lat, rings[r]):
+                                    in_hole = True
+                                    break
+                            if not in_hole:
+                                return True
+                        return False
+                    return False
+                def geometry_centroid(geometry):
+                    try:
+                        if not geometry or not geometry.get('coordinates'):
+                            return None
+                        if geometry.get('type') == 'Polygon':
+                            rings = geometry['coordinates']
+                            outer = rings[0]
+                            xs = [float(p[0]) for p in outer]; ys = [float(p[1]) for p in outer]
+                            return (sum(ys) / len(ys), sum(xs) / len(xs))
+                        if geometry.get('type') == 'MultiPolygon':
+                            rings = geometry['coordinates'][0]
+                            outer = rings[0]
+                            xs = [float(p[0]) for p in outer]; ys = [float(p[1]) for p in outer]
+                            return (sum(ys) / len(ys), sum(xs) / len(xs))
+                        return None
+                    except Exception:
+                        return None
+                counties = None
+                try:
+                    import requests
+                    c_path = os.path.join(getattr(settings, 'MEDIA_ROOT', settings.BASE_DIR), 'counties.geojson')
+                    if os.path.exists(c_path):
+                        with open(c_path, 'r', encoding='utf-8') as f:
+                            counties = json.load(f)
+                    else:
+                        url = 'https://raw.githubusercontent.com/mikelmaron/kenya-election-data/master/data/counties.geojson'
+                        r = requests.get(url, headers={'Accept': 'application/json'}, timeout=10)
+                        r.raise_for_status()
+                        counties = r.json()
+                        try:
+                            os.makedirs(os.path.dirname(c_path), exist_ok=True)
+                            with open(c_path, 'w', encoding='utf-8') as f:
+                                json.dump(counties, f)
+                        except Exception:
+                            pass
+                except Exception:
+                    counties = None
+                c_features = counties and (counties.get('features') or (counties.get('data') or {}).get('features'))
+                if isinstance(c_features, list):
+                    for ftr in features:
+                        props = (ftr or {}).get('properties') or {}
+                        sc = extract_subcounty(props)
+                        if not sc:
+                            continue
+                        centroid = geometry_centroid((ftr or {}).get('geometry'))
+                        if not centroid:
+                            continue
+                        lat, lon = centroid
+                        parent_name = ''
+                        for cf in c_features:
+                            cprops = (cf or {}).get('properties') or {}
+                            raw = cprops.get('COUNTY_NAM') or cprops.get('name') or ''
+                            county_label = norm_county(raw)
+                            if not county_label:
+                                continue
+                            if geometry_contains((cf or {}).get('geometry'), lat, lon):
+                                parent_name = county_label
+                                break
+                        if parent_name:
+                            aliases[sc.lower()] = parent_name
+        except Exception:
+            pass
+        # Correct known county assignments from geo sources
+        try:
+            aliases['kuresoi north'] = 'Nakuru County'
+            aliases['isiolo north'] = 'Isiolo County'
+        except Exception:
+            pass
         payload = json.dumps(aliases, sort_keys=True, separators=(",", ":"))
         etag = hashlib.md5(payload.encode("utf-8")).hexdigest()
         inm = request.headers.get("If-None-Match") or request.META.get("HTTP_IF_NONE_MATCH")

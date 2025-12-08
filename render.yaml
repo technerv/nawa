@@ -1,0 +1,152 @@
+databases:
+  - name: nawa-postgres
+    plan: free
+    databaseName: nawa
+  - name: nawa-redis
+    plan: free
+
+services:
+  - name: nawa-api
+    type: web
+    env: python
+    plan: free
+    buildCommand: cd core && pip install -r requirements.txt
+    startCommand: cd core && gunicorn -k uvicorn.workers.UvicornWorker core.asgi:application --bind 0.0.0.0:8000 --workers 3
+    postDeployCommand: cd core && python manage.py migrate --noinput && python manage.py collectstatic --noinput
+    autoDeploy: true
+    healthCheckPath: /api/
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "nawa-xgxq.onrender.com,nawa-sigma.vercel.app"
+      - key: ENFORCE_ROLE_PERMS
+        value: "True"
+      - key: PUBLIC_MODE
+        value: "True"
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_NAME
+        fromDatabase:
+          name: nawa-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: nawa-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: nawa-postgres
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: nawa-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: nawa-postgres
+          property: port
+      - key: CELERY_BROKER_URL
+        fromDatabase:
+          name: nawa-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromDatabase:
+          name: nawa-redis
+          property: connectionString
+      - key: CORS_ALLOW_ALL_ORIGINS
+        value: "False"
+      - key: CORS_ALLOWED_ORIGINS
+        value: "https://nawa-sigma.vercel.app"
+
+  - name: nawa-worker
+    type: worker
+    env: python
+    plan: free
+    buildCommand: cd core && pip install -r requirements.txt
+    startCommand: cd core && celery -A core worker -l info
+    autoDeploy: true
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "nawa-xgxq.onrender.com,nawa-sigma.vercel.app"
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_NAME
+        fromDatabase:
+          name: nawa-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: nawa-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: nawa-postgres
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: nawa-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: nawa-postgres
+          property: port
+      - key: CELERY_BROKER_URL
+        fromDatabase:
+          name: nawa-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromDatabase:
+          name: nawa-redis
+          property: connectionString
+
+  - name: nawa-beat
+    type: worker
+    env: python
+    plan: free
+    buildCommand: cd core && pip install -r requirements.txt
+    startCommand: cd core && celery -A core beat -l info
+    autoDeploy: true
+    envVars:
+      - key: DJANGO_SECRET_KEY
+        generateValue: true
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_ALLOWED_HOSTS
+        value: "nawa-xgxq.onrender.com,nawa-sigma.vercel.app"
+      - key: DB_ENGINE
+        value: django.db.backends.postgresql
+      - key: DB_NAME
+        fromDatabase:
+          name: nawa-postgres
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: nawa-postgres
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: nawa-postgres
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: nawa-postgres
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: nawa-postgres
+          property: port
+      - key: CELERY_BROKER_URL
+        fromDatabase:
+          name: nawa-redis
+          property: connectionString
+      - key: CELERY_RESULT_BACKEND
+        fromDatabase:
+          name: nawa-redis
+          property: connectionString

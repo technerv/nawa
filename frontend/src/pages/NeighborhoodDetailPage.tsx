@@ -1,12 +1,15 @@
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getNeighborhood, listNeighborhoodAlerts, joinNeighborhood, leaveNeighborhood } from '../api/neighborhood'
+import { getNeighborhood, listNeighborhoodAlerts, joinNeighborhood, leaveNeighborhood, updateNeighborhoodPolygon } from '../api/neighborhood'
 import { showToast } from '../lib/toast'
 import { MapContainer, TileLayer, Polygon } from 'react-leaflet'
+import { useState } from 'react'
 
 export default function NeighborhoodDetailPage() {
   const params = useParams()
   const id = Number(params.id)
+  const [polygonText, setPolygonText] = useState('')
+  const [saving, setSaving] = useState(false)
   const nb = useQuery({
     queryKey: ['neighborhood', id],
     queryFn: async () => await getNeighborhood(id),
@@ -46,6 +49,27 @@ export default function NeighborhoodDetailPage() {
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
         <button onClick={follow}>Follow neighborhood</button>
         <button onClick={unfollow}>Unfollow</button>
+      </div>
+      <div className="card" style={{ marginTop: 12, padding: 8 }}>
+        <strong>Polygon (GeoJSON)</strong>
+        <small style={{ display: 'block', color: '#666' }}>Paste a Polygon GeoJSON with coordinates as [lon, lat].</small>
+        <textarea rows={6} style={{ width: '100%' }} placeholder={`{ "type": "Polygon", "coordinates": [[ [lon,lat], ... ]] }`} value={polygonText} onChange={(e) => setPolygonText(e.target.value)} />
+        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          <button disabled={saving} onClick={async () => {
+            setSaving(true)
+            try {
+              const obj = JSON.parse(polygonText)
+              await updateNeighborhoodPolygon(id, obj)
+              showToast('Polygon saved', 'success')
+              nb.refetch()
+            } catch (e: any) {
+              showToast(e?.message || 'Failed to save polygon', 'error')
+            } finally {
+              setSaving(false)
+            }
+          }}>Save Polygon</button>
+          <button type="button" onClick={() => setPolygonText(JSON.stringify((nb.data as any)?.polygon ?? {}, null, 2))}>Load Current</button>
+        </div>
       </div>
       <h3 style={{ marginTop: 12 }}>Incidents</h3>
       {!alerts.data || alerts.data.length === 0 ? (

@@ -20,7 +20,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from nawaapp.views import AuthMeView, RegistrationView, PublicMapView, PublicSummaryView, PublicReportsView, PublicSubCountiesGeoJSONView, CountyAliasesView
+from nawaapp.views import AuthMeView, RegistrationView, PublicMapView, PublicSummaryView, PublicReportsView, PublicSubCountiesGeoJSONView, PublicConstituenciesGeoJSONView, CountyAliasesView
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -36,7 +36,8 @@ urlpatterns = [
 	# Public
 	path('api/public/map/', PublicMapView.as_view(), name='public_map'),
 	path('api/public/summary/', PublicSummaryView.as_view(), name='public_summary'),
-	path('api/public/reports/', PublicReportsView.as_view(), name='public_reports'),
+    path('api/public/reports/', PublicReportsView.as_view(), name='public_reports'),
     path('api/public/subcounties_geojson/', PublicSubCountiesGeoJSONView.as_view(), name='public_subcounties_geojson'),
+    path('api/public/constituencies_geojson/', PublicConstituenciesGeoJSONView.as_view(), name='public_constituencies_geojson'),
     path('api/county_aliases/', CountyAliasesView.as_view(), name='county_aliases'),
 ]+static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

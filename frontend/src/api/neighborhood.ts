@@ -43,3 +43,8 @@ export async function leaveNeighborhood(id: number) {
   const res = await api.post(`/neighborhood/${id}/leave/`, {})
   return res.data as { detail: string }
 }
+
+export async function updateNeighborhoodPolygon(id: number, polygon: any) {
+  const res = await api.patch<Neighborhood>(`/neighborhood/${id}/`, { polygon })
+  return res.data
+}

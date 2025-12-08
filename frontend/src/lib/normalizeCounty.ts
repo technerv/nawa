@@ -13,11 +13,12 @@ const STORAGE_ETAG_KEY = 'nawa_aliases_etag_v1'
  * Initialize county aliases by fetching from backend `/api/county_aliases/`.
  * This is non-blocking; callers may still use normalizeCountyName immediately.
  */
+import { API_BASE_URL } from '../api/axios'
+
 export async function initCountyAliases(): Promise<void> {
 	ALIASES_READY = false
 	LAST_ALIAS_SOURCE = 'none'
-	const base = (import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api')
-	const url = `${base}/county_aliases/`
+    const url = `${API_BASE_URL}/county_aliases/`
 
 	const maxAttempts = 3 // initial try + 2 retries
 	const timeoutMs = Number(import.meta.env.VITE_ALIAS_FETCH_TIMEOUT_MS ?? 10000)

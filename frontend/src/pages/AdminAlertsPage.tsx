@@ -37,6 +37,19 @@ export default function AdminAlertsPage() {
     }
   }
 
+  async function testNotify() {
+    setStatus('testing')
+    try {
+      if (!incidentId) { setStatus('need_incident_id'); return }
+      const res = await enqueueAlert({ incident_id: incidentId, event_type: 'created', note: 'test notify' })
+      setStatus(`enqueued:${res.event_id}`)
+      showToast('Test notify enqueued', 'success')
+    } catch (err: any) {
+      setStatus(err?.response?.data?.detail || 'test_failed')
+      showToast('Test notify failed', 'error')
+    }
+  }
+
   return (
     <div>
       <h2>Admin Alerts</h2>
@@ -54,6 +67,7 @@ export default function AdminAlertsPage() {
             <input name="note" placeholder="Note (optional)" value={note} onChange={(e) => setNote(e.target.value)} />
             <button type="submit" className="btn-primary">Enqueue</button>
             <button type="button" onClick={retry}>Retry Failed</button>
+            <button type="button" onClick={testNotify}>Test Notify</button>
           </form>
           {status && <p>Status: {status}</p>}
         </div>

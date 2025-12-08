@@ -123,7 +123,7 @@ export default function App() {
 							<>
 								<A to="/dashboard">Dashboard</A>
 								<A to="/categories">Categories</A>
-								<A to="/reports">Reports</A>
+                                <A to="/reports">Report Incident</A>
 								<A to="/map">Map</A>
 						{(roles.includes('Admin') || roles.includes('Dispatcher') || roles.includes('SuperAdmin')) && (
 							<A to="/admin/alerts">Alerts</A>
@@ -142,7 +142,7 @@ export default function App() {
                             <>
                                 <A to="/public/dashboard">Public Dashboard</A>
                                 <A to="/public/map">Public Map</A>
-                                <A to="/public/report">Report</A>
+                                <A to="/public/report">Report Incident</A>
                                 <A to="/login">Login</A>
                                 <A to="/register">Register</A>
                             </>

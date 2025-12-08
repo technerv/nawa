@@ -1,0 +1,126 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB:-nawa}
+      - POSTGRES_USER=${POSTGRES_USER:-nawa}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-nawa_pw}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_USER:-nawa}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "yes"]
+    volumes:
+      - redisdata:/data
+
+  web:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-change-me}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=${POSTGRES_DB:-nawa}
+      - DB_USER=${POSTGRES_USER:-nawa}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-nawa_pw}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - CORS_ALLOW_ALL_ORIGINS=${CORS_ALLOW_ALL_ORIGINS:-True}
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - ENFORCE_ROLE_PERMS=${ENFORCE_ROLE_PERMS:-True}
+      - PUBLIC_MODE=${PUBLIC_MODE:-True}
+      - JWT_ACCESS_MINUTES=${JWT_ACCESS_MINUTES:-60}
+      - JWT_REFRESH_DAYS=${JWT_REFRESH_DAYS:-7}
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+      # Optional alert channel providers
+      - AFRICAS_TALKING_API_KEY=${AFRICAS_TALKING_API_KEY:-}
+      - AFRICAS_TALKING_USERNAME=${AFRICAS_TALKING_USERNAME:-}
+      - AFRICAS_TALKING_SHORTCODE=${AFRICAS_TALKING_SHORTCODE:-}
+      - TWILIO_ACCOUNT_SID=${TWILIO_ACCOUNT_SID:-}
+      - TWILIO_AUTH_TOKEN=${TWILIO_AUTH_TOKEN:-}
+      - TWILIO_FROM_NUMBER=${TWILIO_FROM_NUMBER:-}
+      - SENDGRID_API_KEY=${SENDGRID_API_KEY:-}
+      - SENDGRID_FROM_EMAIL=${SENDGRID_FROM_EMAIL:-noreply@nawa.local}
+      - SENDGRID_FROM_NAME=${SENDGRID_FROM_NAME:-Neighbourhood Alert Watch App}
+      - FCM_SERVER_KEY=${FCM_SERVER_KEY:-}
+      - FCM_PROJECT_ID=${FCM_PROJECT_ID:-}
+    volumes:
+      - ./core/staticfiles:/app/staticfiles
+      - ./core/media:/app/media
+    depends_on:
+      - postgres
+      - redis
+    expose:
+      - "8000"
+
+  worker:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-change-me}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=${POSTGRES_DB:-nawa}
+      - DB_USER=${POSTGRES_USER:-nawa}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-nawa_pw}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    command: ["celery", "-A", "core", "worker", "-l", "info"]
+
+  beat:
+    build:
+      context: ./core
+      dockerfile: Dockerfile
+    environment:
+      - DJANGO_SECRET_KEY=${DJANGO_SECRET_KEY:-change-me}
+      - DJANGO_DEBUG=${DJANGO_DEBUG:-False}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS:-*}
+      - DB_ENGINE=django.db.backends.postgresql
+      - DB_NAME=${POSTGRES_DB:-nawa}
+      - DB_USER=${POSTGRES_USER:-nawa}
+      - DB_PASSWORD=${POSTGRES_PASSWORD:-nawa_pw}
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - CELERY_BROKER_URL=redis://redis:6379/0
+      - CELERY_RESULT_BACKEND=redis://redis:6379/0
+    depends_on:
+      - postgres
+      - redis
+    command: ["celery", "-A", "core", "beat", "-l", "info"]
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        - VITE_API_BASE_URL=${VITE_API_BASE_URL:-/api}
+    volumes:
+      - ./core/staticfiles:/var/www/nawa/staticfiles:ro
+      - ./core/media:/var/www/nawa/media:ro
+    depends_on:
+      - web
+    ports:
+      - "80:80"
+
+volumes:
+  pgdata:
+  redisdata:
+

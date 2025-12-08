@@ -55,3 +55,46 @@ class EnqueueAlertTests(TestCase):
             self.assertTrue(AlertEvent.objects.filter(id=eid).exists())
         finally:
             tasks.send_notification_task.delay = orig_delay
+
+
+class RetryFailedAlertsTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.admin = User.objects.create_superuser(username='admin', email='admin@example.com', password='pass')
+        self.client = APIClient()
+        self.client.force_authenticate(user=self.admin)
+
+        self.cat = CrimeCategory.objects.create(crime_category='Robbery', crime_short_code='ROB')
+        self.incident = CrimeReportBook.objects.create(
+            name_of_crime='Retry Case',
+            category_of_crime=self.cat,
+            severity=CrimeReportBook.SEVERITY_HIGH,
+            status=CrimeReportBook.STATUS_SUBMITTED,
+        )
+
+        # Create an alert event with failed dispatch (no contacts configured)
+        url = reverse('nawaapp:alertevent-enqueue')
+        resp = self.client.post(url, {
+            'incident_id': self.incident.id,
+            'event_type': 'created',
+            'note': 'prepare retry'
+        }, format='json')
+        self.assertEqual(resp.status_code, 201)
+        self.event_id = resp.data.get('event_id')
+        self.assertTrue(self.event_id)
+
+    def test_retry_failed_endpoint(self):
+        url = reverse('nawaapp:alertevent-retry-failed')
+        resp = self.client.post(url, {}, format='json')
+        self.assertEqual(resp.status_code, 200)
+        self.assertIn('detail', resp.data)
+        # Verify payload has channels_summary after retry
+        ev = AlertEvent.objects.get(id=self.event_id)
+        self.assertIn('channels_summary', ev.payload)
+        self.assertIn('dispatch_results', ev.payload)
+
+    def test_retry_failed_task_direct(self):
+        from nawaapp.tasks import retry_failed_alerts
+        # Call task directly
+        msg = retry_failed_alerts()
+        self.assertTrue(isinstance(msg, str))

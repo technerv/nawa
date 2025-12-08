@@ -1,6 +1,7 @@
+import { API_BASE_URL } from './axios'
+
 export async function createIncident(payload: any, token?: string) {
-  const base = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api'
-  const res = await fetch(`${base}/incidents/`, {
+  const res = await fetch(`${API_BASE_URL}/incidents/`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -12,8 +13,7 @@ export async function createIncident(payload: any, token?: string) {
 }
 
 export async function listIncidents(params: Record<string, string> = {}) {
-  const base = import.meta.env.VITE_API_BASE_URL ?? 'http://127.0.0.1:8000/api'
   const qs = new URLSearchParams(params).toString()
-  const res = await fetch(`${base}/incidents/${qs ? '?' + qs : ''}`)
+  const res = await fetch(`${API_BASE_URL}/incidents/${qs ? '?' + qs : ''}`)
   return res.json()
 }
