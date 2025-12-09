@@ -50,6 +50,14 @@ export interface CrimeReportMapPoint {
     date_updated: string
 }
 
+export interface CrimeWitness {
+  id: number
+  name: string
+  contact_information?: string | null
+  statement: string
+  crime_report: number
+}
+
 export async function listCrimeCategories(params?: { search?: string; page?: number }) {
 	const res = await api.get<Paginated<CrimeCategory>>('/crimecategory/', { params })
 	return res.data
@@ -125,21 +133,88 @@ export async function createPublicCrimeReport(payload: {
   county?: string
   latitude?: number
   longitude?: number
+  evidence_video_file?: File
 }) {
-  const res = await fetch(`${(await import('./axios')).API_BASE_URL}/public/reports/`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-  if (!res.ok) {
-    const text = await res.text()
-    let msg = text || 'Public report failed'
-    try {
-      const json = JSON.parse(text)
-      const d = (json && json.detail) || json
-      msg = typeof d === 'string' ? d : JSON.stringify(d)
-    } catch {}
-    throw new Error(msg)
+  const { API_BASE_URL } = await import('./axios')
+  if (payload.evidence_video_file instanceof File) {
+    const form = new FormData()
+    form.append('name_of_crime', String(payload.name_of_crime))
+    form.append('category_of_crime', String(payload.category_of_crime))
+    if (payload.description) form.append('description', String(payload.description))
+    if (payload.location_name) form.append('location_name', String(payload.location_name))
+    if (payload.location_description) form.append('location_description', String(payload.location_description))
+    if (payload.county) form.append('county', String(payload.county))
+    if (payload.latitude != null) form.append('latitude', String(payload.latitude))
+    if (payload.longitude != null) form.append('longitude', String(payload.longitude))
+    form.append('evidence_video', payload.evidence_video_file)
+    const res = await fetch(`${API_BASE_URL}/public/reports/`, {
+      method: 'POST',
+      body: form
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      let msg = text || 'Public report failed'
+      try {
+        const json = JSON.parse(text)
+        const d = (json && json.detail) || json
+        msg = typeof d === 'string' ? d : JSON.stringify(d)
+      } catch {}
+      throw new Error(msg)
+    }
+    return await res.json()
+  } else {
+    const res = await fetch(`${API_BASE_URL}/public/reports/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    })
+    if (!res.ok) {
+      const text = await res.text()
+      let msg = text || 'Public report failed'
+      try {
+        const json = JSON.parse(text)
+        const d = (json && json.detail) || json
+        msg = typeof d === 'string' ? d : JSON.stringify(d)
+      } catch {}
+      throw new Error(msg)
+    }
+    return await res.json()
   }
-  return await res.json()
+}
+
+export async function createAnonymousWitnessMessage(payload: {
+  case_id?: string | number
+  occurance_book_number?: string
+  ob_number?: string
+  tracking_code?: string
+  name?: string
+  contact_information?: string
+  statement: string
+}) {
+  const res = await api.post<CrimeWitness>('/crimewitness/', payload)
+  return res.data
+}
+
+export async function getPublicCase(idOrOb: string | number) {
+  const params: any = {}
+  if (typeof idOrOb === 'number' || (/^\d+$/.test(String(idOrOb)))) params.id = Number(idOrOb)
+  else params.ob = String(idOrOb)
+  const res = await api.get('/public/reports/', { params })
+  return res.data as {
+    id: number
+    name_of_crime: string
+    description?: string | null
+    location_name?: string | null
+    county?: string | null
+    date_updated: string
+    category_of_crime_name?: string | null
+    occurance_book_number: string
+    risk_score: number
+  }
+}
+
+export async function listWitnessMessages(crime_report_id: number) {
+  const res = await api.get<CrimeWitness[]>('/crimewitness/', { params: { crime_report: crime_report_id, ordering: '-date_created' } })
+  // DRF default for list is paginated only if configured; router defaults to unpaginated here
+  return Array.isArray(res.data) ? res.data : (res.data as any).results || []
 }

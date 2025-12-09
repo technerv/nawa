@@ -48,3 +48,18 @@ export async function updateNeighborhoodPolygon(id: number, polygon: any) {
   const res = await api.patch<Neighborhood>(`/neighborhood/${id}/`, { polygon })
   return res.data
 }
+
+export async function listNeighborhoodMessages(id: number) {
+  const res = await api.get<{ id: number; neighborhood: number; user: number; user_name?: string | null; text: string; approved: boolean; created_at: string }[]>(`/neighborhood/${id}/messages/`)
+  return res.data
+}
+
+export async function createNeighborhoodMessage(id: number, text: string) {
+  const res = await api.post<{ id: number; neighborhood: number; user: number; user_name?: string | null; text: string; approved: boolean; created_at: string }>(`/neighborhood/${id}/messages/`, { text })
+  return res.data
+}
+
+export async function approveNeighborhoodMessage(id: number, message_id: number, approved: boolean = true) {
+  const res = await api.post<{ id: number; neighborhood: number; user: number; user_name?: string | null; text: string; approved: boolean; created_at: string }>(`/neighborhood/${id}/messages/approve/`, { message_id, approved })
+  return res.data
+}

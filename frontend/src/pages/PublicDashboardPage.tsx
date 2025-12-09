@@ -5,10 +5,11 @@ import { useNavigate } from 'react-router-dom'
 import { normalizeCountyName } from '../lib/normalizeCounty'
 
 type SummaryResponse = {
-	date_from?: string | null
-	date_to?: string | null
-	national: { low: number; medium: number; high: number; critical: number; total: number }
-	by_county: { county: string; low: number; medium: number; high: number; critical: number; total: number }[]
+    date_from?: string | null
+    date_to?: string | null
+    national: { low: number; medium: number; high: number; critical: number; total: number }
+    by_county: { county: string; low: number; medium: number; high: number; critical: number; total: number }[]
+    timeseries?: { date: string; total: number; low: number; medium: number; high: number; critical: number }[]
 }
 
 export default function PublicDashboardPage() {
@@ -38,8 +39,8 @@ export default function PublicDashboardPage() {
 			</form>
 			{query.isLoading && <p>Loading…</p>}
 			{query.isError && <p style={{ color: 'crimson' }}>Failed to load summary.</p>}
-			{query.data && (
-				<>
+            {query.data && (
+                <>
 					<div className="card mb-3">
 						<strong>National totals:</strong>
 						<div className="row mt-2">
@@ -50,9 +51,9 @@ export default function PublicDashboardPage() {
 							<span>Total: {query.data.national.total}</span>
 						</div>
 					</div>
-					<div className="card mb-3">
-						<strong>Severity distribution</strong>
-						<div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                    <div className="card mb-3">
+                        <strong>Severity distribution</strong>
+                        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
 							<div style={{ display: 'grid', gap: 4 }}>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
 									<span style={{ minWidth: 70 }}>Low</span>
@@ -82,16 +83,44 @@ export default function PublicDashboardPage() {
 									</div>
 									<span style={{ minWidth: 40, textAlign: 'right' }}>{query.data.national.critical}</span>
 								</div>
-						</div>
-					</div>
-				</div>
-				<div className="card mb-3">
-					<strong>Top counties (stacked by severity)</strong>
-					<div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-							{query.data.by_county.slice(0, 10).map((row, idx) => {
-								const total = row.total || 0
-								const pLow = total ? (row.low / total) * 100 : 0
-								const pMed = total ? (row.medium / total) * 100 : 0
+                        </div>
+                    </div>
+                    {!!(query.data.timeseries || []).length && (
+                        <div className="card mb-3">
+                            <strong>Trend (last 30 days)</strong>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'end', height: 120, marginTop: 8 }}>
+                                {(() => {
+                                    const series = (query.data.timeseries || [])
+                                    const max = Math.max(0, ...series.map((s) => s.total))
+                                    return series.map((s, i) => {
+                                        const h = max ? Math.max(2, Math.round((s.total / max) * 100)) : 2
+                                        const lowH = max ? Math.round(((s.low || 0) / max) * 100) : 0
+                                        const medH = max ? Math.round(((s.medium || 0) / max) * 100) : 0
+                                        const highH = max ? Math.round(((s.high || 0) / max) * 100) : 0
+                                        const critH = max ? Math.round(((s.critical || 0) / max) * 100) : 0
+                                        return (
+                                            <div key={i} title={`${s.date}: ${s.total}`} style={{ width: 10, display: 'grid', alignItems: 'end' }}>
+                                                <div style={{ height: h, width: '100%', display: 'grid' }}>
+                                                    <div style={{ height: lowH, background: '#10b981' }}></div>
+                                                    <div style={{ height: medH, background: '#f59e0b' }}></div>
+                                                    <div style={{ height: highH, background: '#ef4444' }}></div>
+                                                    <div style={{ height: critH, background: '#7c3aed' }}></div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })
+                                })()}
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <div className="card mb-3">
+                    <strong>Top counties (stacked by severity)</strong>
+                    <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                            {query.data.by_county.filter((r) => (r.total || 0) > 0).slice(0, 10).map((row, idx) => {
+                                const total = row.total || 0
+                                const pLow = total ? (row.low / total) * 100 : 0
+                                const pMed = total ? (row.medium / total) * 100 : 0
 								const pHigh = total ? (row.high / total) * 100 : 0
 								const pCrit = total ? (row.critical / total) * 100 : 0
 								return (

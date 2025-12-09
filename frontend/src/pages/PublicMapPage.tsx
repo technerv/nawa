@@ -9,12 +9,13 @@ import { showToast } from '../lib/toast'
 import { normalizeCountyName } from '../lib/normalizeCounty'
 
 type PublicMapPoint = {
-	id: number
-	name_of_crime: string
-	status: string
-	severity: string
-	category_of_crime_name: string | null
-	location_name: string | null
+    id: number
+    occurance_book_number?: string
+    name_of_crime: string
+    status: string
+    severity: string
+    category_of_crime_name: string | null
+    location_name: string | null
 	county: string | null
 	latitude: number
 	longitude: number
@@ -34,6 +35,7 @@ export default function PublicMapPage() {
     const [showNeighborhoods, setShowNeighborhoods] = useState(false)
     const [colorByDensity, setColorByDensity] = useState(true)
     const [fitKenyaTick, setFitKenyaTick] = useState(0)
+    const [baseMap, setBaseMap] = useState<'standard' | 'satellite' | 'terrain'>('standard')
 	const query = useQuery({
 		queryKey: ['public_map'],
 		queryFn: async () => {
@@ -136,12 +138,15 @@ export default function PublicMapPage() {
         const m: Record<string, number> = {}
         const items: PublicMapPoint[] = (query.data || []) as PublicMapPoint[]
         items.forEach((p: PublicMapPoint) => {
-            const name = normalizeCountyName(p.county || '')
+            const scName = findSubCountyForPoint(p.latitude, p.longitude, subCountyGeo)
+            const fromSub = normalizeCountyName(scName || '')
+            const fromField = normalizeCountyName(p.county || '')
+            const name = fromSub || fromField
             if (!name) return
             m[name] = (m[name] || 0) + 1
         })
         return m
-    }, [query.data])
+    }, [query.data, subCountyGeo])
 
     const maxCount = useMemo(() => {
         let max = 0
@@ -175,6 +180,11 @@ export default function PublicMapPage() {
                     <input type="checkbox" checked={colorByDensity} onChange={(e) => setColorByDensity(e.target.checked)} />
                     Color counties by density
                 </label>
+                <select value={baseMap} onChange={(e) => setBaseMap(e.target.value as any)}>
+                    <option value="standard">Standard</option>
+                    <option value="satellite">Satellite</option>
+                    <option value="terrain">Terrain</option>
+                </select>
                 <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
                     <option value="">All severities</option>
                     <option value="low">Low</option>
@@ -183,7 +193,7 @@ export default function PublicMapPage() {
                     <option value="critical">Critical</option>
                 </select>
             </div>
-			<div style={{ height: '70vh', width: '100%', border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
+			<div style={{ height: '85vh', width: '100%', border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
                 <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
                     <FitKenya tick={fitKenyaTick} />
                     {showCounties && (
@@ -217,10 +227,26 @@ export default function PublicMapPage() {
                             </div>
                         </div>
                     )}
-					<TileLayer
-						attribution='&copy; OpenStreetMap contributors'
-						url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-					/>
+                    {baseMap === 'standard' && (
+                        <TileLayer
+                            attribution='&copy; OpenStreetMap contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                    )}
+                    {baseMap === 'satellite' && (
+                        <TileLayer
+                            attribution='Tiles © Esri'
+                            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                            maxZoom={19}
+                        />
+                    )}
+                    {baseMap === 'terrain' && (
+                        <TileLayer
+                            attribution='Map data: &copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap (CC-BY-SA)'
+                            url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+                            maxZoom={17}
+                        />
+                    )}
 					{fitTo && fitTo.lat != null && fitTo.lon != null && <FitToPoint lat={fitTo.lat} lon={fitTo.lon} />}
 					{newPoint && (
 						<CircleMarker center={[newPoint.lat, newPoint.lon]} radius={10} pathOptions={{ color: '#2b6cb0', fillColor: '#2b6cb0', fillOpacity: 0.2 }} />
@@ -248,8 +274,11 @@ export default function PublicMapPage() {
                             data={{ type: 'FeatureCollection', features: (neighborhoods.data || []).filter((n) => n.polygon).map((n) => ({ type: 'Feature', properties: { id: n.id, name: n.name }, geometry: n.polygon })) } as any}
                             style={() => ({ color: '#2563eb', weight: 2, fillOpacity: 0.06 })}
                             onEachFeature={(feature: any, layer: any) => {
-                                const name = (feature && feature.properties && feature.properties.name) || 'Neighborhood'
-                                layer.bindPopup(name)
+                                const props = (feature && feature.properties) || {}
+                                const name = props.name || 'Neighborhood'
+                                const id = props.id
+                                const html = id ? `<div>${name} <br/><a href="/neighborhood/${id}">Open</a></div>` : String(name)
+                                layer.bindPopup(html)
                                 try { layer.on('click', () => { try { (layer as any)._map.fitBounds(layer.getBounds(), { padding: [20, 20] }) } catch {} }) } catch {}
                             }}
                         />
@@ -314,12 +343,18 @@ export default function PublicMapPage() {
                         }
                         const icon = L.divIcon({ className: 'leaflet-div-icon', html: `<span class=\"pulse-marker\" style=\"--pulse-color:${sc(p.severity)}\"></span>`, iconSize: [16,16], iconAnchor: [8,8] })
                         const scName = findSubCountyForPoint(p.latitude, p.longitude, subCountyGeo)
-                        const countyName = normalizeCountyName(p.county || scName || '')
+                        const normalizedFromSub = normalizeCountyName(scName || '')
+                        const normalizedFromField = normalizeCountyName(p.county || '')
+                        const countyName = normalizedFromSub || normalizedFromField
                         const coords = `${p.latitude?.toFixed ? p.latitude.toFixed(6) : p.latitude}, ${p.longitude?.toFixed ? p.longitude.toFixed(6) : p.longitude}`
                         return (
                             <Marker key={p.id} position={[p.latitude, p.longitude]} icon={icon}>
                                 <Popup>
                                     <strong>{p.name_of_crime}</strong>
+                                    <br />
+                                    Case ID: {p.id}
+                                    <br />
+                                    OB: {p.occurance_book_number || '—'}
                                     <br />
                                     Type: {p.category_of_crime_name || '—'}
                                     <br />
@@ -332,6 +367,36 @@ export default function PublicMapPage() {
                                     Severity: {p.severity}
                                     <br />
                                     Updated: {new Date(p.date_updated).toLocaleString()}
+                                    <div style={{ marginTop: 8 }}>
+                                        <a
+                                            href={`/public/track?${p.occurance_book_number ? `ob=${encodeURIComponent(p.occurance_book_number)}` : `id=${p.id}`}`}
+                                            style={{ padding: '6px 10px', background: '#f59e0b', color: '#111827', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}
+                                        >
+                                            Track Case
+                                        </a>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                        <button
+                                            style={{ padding: '6px 10px', background: '#dc2626', color: 'white', borderRadius: 6 }}
+                                            onClick={() => {
+                                                const message = `[${String(p.severity || '').toUpperCase()}] SOS: ${p.name_of_crime} — ${p.location_name || coords}`
+                                                const payload = { latitude: p.latitude, longitude: p.longitude, location_name: p.location_name || `Map ${coords}`, county: countyName }
+                                                window.dispatchEvent(new CustomEvent('open_sos', { detail: { payload, message } }))
+                                            }}
+                                        >
+                                            Open SOS
+                                        </button>
+                                        <button
+                                            style={{ padding: '6px 10px', background: '#2563eb', color: 'white', borderRadius: 6 }}
+                                            onClick={() => {
+                                                const message = `[${String(p.severity || '').toUpperCase()}] SOS: ${p.name_of_crime} — ${p.location_name || coords}`
+                                                const payload = { latitude: p.latitude, longitude: p.longitude, location_name: p.location_name || `Map ${coords}`, county: countyName, notify_message: message }
+                                                window.dispatchEvent(new CustomEvent('sos_request', { detail: payload }))
+                                            }}
+                                        >
+                                            Quick SOS
+                                        </button>
+                                    </div>
                                 </Popup>
                             </Marker>
                         )

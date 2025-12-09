@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.utils import timezone
 from .models import CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog, AlertEvent
 from .models import Neighborhood, NeighborhoodMember
+from .models import NeighborhoodMessage
 
 class CrimeReportBookAuditLogSerializer(serializers.ModelSerializer):
     changed_by_name = serializers.SerializerMethodField()
@@ -92,6 +93,7 @@ class CrimeReportBookSerializer(serializers.ModelSerializer):
     assigned_to = serializers.PrimaryKeyRelatedField(queryset=get_user_model().objects.all(), allow_null=True, required=False)
     assigned_to_name = serializers.SerializerMethodField()
     audit_logs = CrimeReportBookAuditLogSerializer(many=True, read_only=True)
+    risk_score = serializers.SerializerMethodField()
 
     def validate(self, attrs):
         latitude = attrs.get('latitude', getattr(self.instance, 'latitude', None))
@@ -142,6 +144,7 @@ class CrimeReportBookSerializer(serializers.ModelSerializer):
             'age',
             'criminal_id_number',
             'upload_criminal_photo',
+            'evidence_video',
             'assigned_to',
             'assigned_to_name',
             'assigned_at',
@@ -154,7 +157,8 @@ class CrimeReportBookSerializer(serializers.ModelSerializer):
             'date_updated',
             'category_of_crime',
             'category_of_crime_name',
-            'audit_logs'
+            'audit_logs',
+            'risk_score'
         ]
         read_only_fields = [
             'occurance_book_number',
@@ -176,6 +180,22 @@ class CrimeReportBookSerializer(serializers.ModelSerializer):
             return None
         return user.get_full_name() or user.get_username()
 
+    def get_risk_score(self, obj):
+        name = (obj.name_of_crime or '').lower()
+        desc = (obj.description or '').lower()
+        sev_w = {
+            'low': 0.1,
+            'medium': 0.3,
+            'high': 0.7,
+            'critical': 1.0,
+        }.get(getattr(obj, 'severity', '') or 'medium', 0.3)
+        kw = ['gun', 'firearm', 'knife', 'explosive', 'riot', 'mob', 'assault', 'kidnap', 'terror', 'arson', 'shoot', 'stab']
+        kw_score = sum(1 for k in kw if (k in name or k in desc))
+        text_len = len(desc) + len(name)
+        text_w = min(1.0, text_len / 400.0)
+        base = sev_w * 60 + kw_score * 8 + text_w * 20
+        return int(max(0, min(100, round(base))))
+
 class CrimeWitnessSerializer(serializers.ModelSerializer):
     # Create validators to validate the information in every field
     class Meta:
@@ -185,6 +205,7 @@ class CrimeWitnessSerializer(serializers.ModelSerializer):
 
 class PublicCrimeReportSerializer(serializers.ModelSerializer):
     category_of_crime_name = serializers.CharField(source='category_of_crime.crime_category', read_only=True)
+    risk_score = serializers.SerializerMethodField()
     
     class Meta:
         model = CrimeReportBook
@@ -199,7 +220,24 @@ class PublicCrimeReportSerializer(serializers.ModelSerializer):
             'latitude',
             'longitude',
             'date_updated',
+            'risk_score',
         ]
+
+    def get_risk_score(self, obj):
+        name = (obj.name_of_crime or '').lower()
+        desc = (obj.description or '').lower()
+        sev_w = {
+            'low': 0.1,
+            'medium': 0.3,
+            'high': 0.7,
+            'critical': 1.0,
+        }.get(getattr(obj, 'severity', '') or 'medium', 0.3)
+        kw = ['gun', 'firearm', 'knife', 'explosive', 'riot', 'mob', 'assault', 'kidnap', 'terror', 'arson', 'shoot', 'stab']
+        kw_score = sum(1 for k in kw if (k in name or k in desc))
+        text_len = len(desc) + len(name)
+        text_w = min(1.0, text_len / 400.0)
+        base = sev_w * 60 + kw_score * 8 + text_w * 20
+        return int(max(0, min(100, round(base))))
 
 
 class AlertEventSerializer(serializers.ModelSerializer):
@@ -242,3 +280,16 @@ class AlertEventSerializer(serializers.ModelSerializer):
                 'failed': failed,
             }
         return summary
+class NeighborhoodMessageSerializer(serializers.ModelSerializer):
+    user_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = NeighborhoodMessage
+        fields = ['id', 'neighborhood', 'user', 'user_name', 'text', 'approved', 'created_at']
+        read_only_fields = ['id', 'created_at', 'user_name']
+
+    def get_user_name(self, obj):
+        user = getattr(obj, 'user', None)
+        if not user:
+            return None
+        return user.get_full_name() or user.get_username()

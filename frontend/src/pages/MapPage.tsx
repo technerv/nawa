@@ -25,6 +25,7 @@ export default function MapPage() {
     const [subCountyGeo, setSubCountyGeo] = useState<any | null>(null)
     const [showConstituencies, setShowConstituencies] = useState<boolean>(false)
     const [constituencyGeo, setConstituencyGeo] = useState<any | null>(null)
+    const [baseMap, setBaseMap] = useState<'standard' | 'satellite' | 'terrain'>('standard')
 
     const query = useQuery({
         queryKey: ['map', { severity, status }],
@@ -219,6 +220,11 @@ export default function MapPage() {
                     <input type="checkbox" checked={colorByDensity} onChange={(e) => setColorByDensity(e.target.checked)} />
                     Color by density
                 </label>
+                <select value={baseMap} onChange={(e) => setBaseMap(e.target.value as any)}>
+                    <option value="standard">Standard</option>
+                    <option value="satellite">Satellite</option>
+                    <option value="terrain">Terrain</option>
+                </select>
                 {colorByDensity && (
                     <select value={densityDays} onChange={(e) => setDensityDays(Number(e.target.value))}>
                         <option value={7}>Last 7 days</option>
@@ -238,7 +244,7 @@ export default function MapPage() {
                 </div>
             )}
 
-			<div style={{ height: '70vh', width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', background: 'rgba(17,24,39,0.6)' }}>
+			<div style={{ height: '85vh', width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', background: 'rgba(17,24,39,0.6)' }}>
                 <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
                     {showCounties && (
                         <div style={{ position: 'absolute', zIndex: 1000, left: 12, top: 12, background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', color: '#e5e7eb', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
@@ -272,10 +278,26 @@ export default function MapPage() {
                         </div>
                     )}
                     <FitKenya tick={fitKenyaTick} />
-                    <TileLayer
-                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                    />
+                    {baseMap === 'standard' && (
+                        <TileLayer
+                            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                        />
+                    )}
+                    {baseMap === 'satellite' && (
+                        <TileLayer
+                            attribution='Tiles © Esri'
+                            url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
+                            maxZoom={19}
+                        />
+                    )}
+                    {baseMap === 'terrain' && (
+                        <TileLayer
+                            attribution='Map data: &copy; OpenStreetMap contributors, SRTM | &copy; OpenTopoMap (CC-BY-SA)'
+                            url="https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png"
+                            maxZoom={17}
+                        />
+                    )}
                     {showCounties && countyGeo && (
                         <GeoJSON
                             data={countyGeo}
@@ -432,6 +454,14 @@ export default function MapPage() {
                                     Sub-County: {scName || '—'}
                                     <br />
                                     Updated: {new Date(point.date_updated).toLocaleString()}
+                                    <div style={{ marginTop: 8 }}>
+                                        <a
+                                            href={`/public/track?${point.occurance_book_number ? `ob=${encodeURIComponent(point.occurance_book_number)}` : `id=${point.id}`}`}
+                                            style={{ padding: '6px 10px', background: '#f59e0b', color: '#111827', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}
+                                        >
+                                            Track Case
+                                        </a>
+                                    </div>
                                 </Popup>
                             </Marker>
                         )

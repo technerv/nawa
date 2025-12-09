@@ -1,13 +1,15 @@
 import { useQuery } from '@tanstack/react-query'
 import { api, API_BASE_URL } from '../api/axios'
+import { normalizeCountyName } from '../lib/normalizeCounty'
 import { FormEvent, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 type SummaryResponse = {
-	date_from?: string | null
-	date_to?: string | null
-	national: { low: number; medium: number; high: number; critical: number; total: number }
-	by_county: { county: string; low: number; medium: number; high: number; critical: number; total: number }[]
+    date_from?: string | null
+    date_to?: string | null
+    national: { low: number; medium: number; high: number; critical: number; total: number }
+    by_county: { county: string; low: number; medium: number; high: number; critical: number; total: number }[]
+    timeseries?: { date: string; total: number; low: number; medium: number; high: number; critical: number }[]
 }
 
 export default function DashboardPage() {
@@ -55,7 +57,7 @@ export default function DashboardPage() {
 					Admins can manage alerts via Alerts, and everyone can join a Neighborhood from Join Neighborhood.
 				</p>
 			</div>
-			<h3>Crime Summary</h3>
+            <h3>Crime Summary</h3>
 			<form onSubmit={(e: FormEvent) => { e.preventDefault(); refetch() }} className="row mb-3">
 				<input name="date_from" type="date" value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
 				<input name="date_to" type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
@@ -70,10 +72,10 @@ export default function DashboardPage() {
 					Failed to load summary. Please check your connection or try clearing filters.
 				</p>
 			)}
-		{data && (
-				<>
-					<div className="card mb-3">
-						<strong>National totals:</strong>
+        {data && (
+                <>
+                    <div className="card mb-3">
+                        <strong>National totals:</strong>
 						<div className="row mt-2">
 							<span>Low: {data.national.low}</span>
 							<span>Medium: {data.national.medium}</span>
@@ -82,9 +84,9 @@ export default function DashboardPage() {
 							<span>Total: {data.national.total}</span>
 						</div>
 					</div>
-					<div className="card mb-3">
-						<strong>Severity distribution</strong>
-						<div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                    <div className="card mb-3">
+                        <strong>Severity distribution</strong>
+                        <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
 							<div style={{ display: 'grid', gap: 4 }}>
 								<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
 									<span style={{ minWidth: 70 }}>Low</span>
@@ -114,23 +116,51 @@ export default function DashboardPage() {
 									</div>
 									<span style={{ minWidth: 40, textAlign: 'right' }}>{data.national.critical}</span>
 								</div>
-						</div>
-					</div>
-				</div>
-				<div className="card mb-3">
-					<strong>Top counties (stacked by severity)</strong>
-					<div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
-							{data.by_county.slice(0, 10).map((row, idx) => {
-								const total = row.total || 0
-								const pLow = total ? (row.low / total) * 100 : 0
-								const pMed = total ? (row.medium / total) * 100 : 0
+                        </div>
+                    </div>
+                    {!!(data.timeseries || []).length && (
+                        <div className="card mb-3">
+                            <strong>Trend (last 30 days)</strong>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'end', height: 120, marginTop: 8 }}>
+                                {(() => {
+                                    const series = (data.timeseries || [])
+                                    const max = Math.max(0, ...series.map((s) => s.total))
+                                    return series.map((s, i) => {
+                                        const h = max ? Math.max(2, Math.round((s.total / max) * 100)) : 2
+                                        const lowH = max ? Math.round(((s.low || 0) / max) * 100) : 0
+                                        const medH = max ? Math.round(((s.medium || 0) / max) * 100) : 0
+                                        const highH = max ? Math.round(((s.high || 0) / max) * 100) : 0
+                                        const critH = max ? Math.round(((s.critical || 0) / max) * 100) : 0
+                                        return (
+                                            <div key={i} title={`${s.date}: ${s.total}`} style={{ width: 10, display: 'grid', alignItems: 'end' }}>
+                                                <div style={{ height: h, width: '100%', display: 'grid' }}>
+                                                    <div style={{ height: lowH, background: '#10b981' }}></div>
+                                                    <div style={{ height: medH, background: '#f59e0b' }}></div>
+                                                    <div style={{ height: highH, background: '#ef4444' }}></div>
+                                                    <div style={{ height: critH, background: '#7c3aed' }}></div>
+                                                </div>
+                                            </div>
+                                        )
+                                    })
+                                })()}
+                            </div>
+                        </div>
+                    )}
+                </div>
+                <div className="card mb-3">
+                    <strong>Top counties (stacked by severity)</strong>
+                    <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+                            {data.by_county.filter((r) => (r.total || 0) > 0).slice(0, 10).map((row, idx) => {
+                                const total = row.total || 0
+                                const pLow = total ? (row.low / total) * 100 : 0
+                                const pMed = total ? (row.medium / total) * 100 : 0
 								const pHigh = total ? (row.high / total) * 100 : 0
 								const pCrit = total ? (row.critical / total) * 100 : 0
 								return (
-									<div key={idx} style={{ display: 'grid', gap: 6 }}>
-										<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-											<span style={{ minWidth: 160 }}>{row.county}</span>
-											<div style={{ flex: 1, height: 16, background: 'rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
+                                    <div key={idx} style={{ display: 'grid', gap: 6 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                            <span style={{ minWidth: 160 }}>{normalizeCountyName(row.county)}</span>
+                                            <div style={{ flex: 1, height: 16, background: 'rgba(255,255,255,0.08)', borderRadius: 8, overflow: 'hidden', display: 'flex' }}>
 												<div style={{ width: `${Math.round(pLow)}%`, height: '100%', background: '#10b981' }} />
 												<div style={{ width: `${Math.round(pMed)}%`, height: '100%', background: '#f59e0b' }} />
 												<div style={{ width: `${Math.round(pHigh)}%`, height: '100%', background: '#ef4444' }} />
@@ -162,14 +192,14 @@ export default function DashboardPage() {
 						</thead>
 						<tbody>
 							{data.by_county.map((row, idx) => (
-								<tr key={idx} style={{ cursor: 'pointer' }} onClick={() => navigate(`/reports?county=${encodeURIComponent(row.county)}`)}>
-									<td><u>{row.county}</u></td>
-									<td>{row.low}</td>
-									<td>{row.medium}</td>
-									<td>{row.high}</td>
-									<td>{row.critical}</td>
-									<td>{row.total}</td>
-								</tr>
+                                <tr key={idx} style={{ cursor: 'pointer' }} onClick={() => navigate(`/reports?county=${encodeURIComponent(normalizeCountyName(row.county))}`)}>
+                                    <td><u>{normalizeCountyName(row.county)}</u></td>
+                                    <td>{row.low}</td>
+                                    <td>{row.medium}</td>
+                                    <td>{row.high}</td>
+                                    <td>{row.critical}</td>
+                                    <td>{row.total}</td>
+                                </tr>
 							))}
 						</tbody>
 					</table>

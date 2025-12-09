@@ -16,12 +16,24 @@ export default function ReportForm() {
   const [categoryId, setCategoryId] = useState<number | undefined>()
   const [status, setStatus] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
+  const [videoFile, setVideoFile] = useState<File | null>(null)
   const cats = useQuery({ queryKey: ['categories', { for: 'public_report' }], queryFn: () => listCrimeCategories() })
   const navigate = useNavigate()
   const [hp, setHp] = useState('')
   const [ca, setCa] = useState<number>(0)
   const [cb, setCb] = useState<number>(0)
   const [ans, setAns] = useState<number | undefined>()
+  const [toasts, setToasts] = useState<{ id: number; text: string; type: 'success' | 'error' | 'info' }[]>([])
+  useEffect(() => {
+    function onToast(e: any) {
+      const { text, type } = e?.detail || {}
+      const id = Date.now() + Math.random()
+      setToasts((prev) => [...prev, { id, text: String(text || ''), type: type || 'info' }])
+      setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000)
+    }
+    window.addEventListener('toast', onToast as any)
+    return () => { window.removeEventListener('toast', onToast as any) }
+  }, [])
   useEffect(() => {
     const a = Math.floor(Math.random() * 9) + 1
     const b = Math.floor(Math.random() * 9) + 1
@@ -51,6 +63,19 @@ export default function ReportForm() {
     return () => controller.abort()
   }, [lat, lon])
 
+  function quickExit() {
+    setName('')
+    setDesc('')
+    setCounty('')
+    setLat(undefined)
+    setLon(undefined)
+    setCategoryId(undefined)
+    setVideoFile(null)
+    setHp('')
+    setAns(undefined)
+    try { navigate('/welcome') } catch {}
+  }
+
   async function submit(e: any) {
     e.preventDefault()
     setStatus('sending')
@@ -59,6 +84,12 @@ export default function ReportForm() {
       if (!name || !categoryId) {
         setStatus('error')
         setErrorMsg('Please fill required fields: name and category')
+        return
+      }
+      const trimmed = (desc || '').trim()
+      if (!trimmed || trimmed.length < 20) {
+        setStatus('error')
+        setErrorMsg('Please provide a description of at least 20 characters')
         return
       }
       const payload = {
@@ -70,22 +101,30 @@ export default function ReportForm() {
         latitude: lat,
         longitude: lon,
         category_of_crime: categoryId!,
+        evidence_video_file: videoFile || undefined,
         honeypot: hp,
         captcha_a: ca,
         captcha_b: cb,
         captcha_answer: ans ?? -1
       }
-      await createPublicCrimeReport(payload)
+      const resp = await createPublicCrimeReport(payload)
       setStatus('ok')
-      showToast('Report submitted', 'success')
+      try {
+        const code = (resp && (resp.code || resp.tracking_code || resp.id || resp.occurance_book_number))
+        if (code) {
+          showToast(`Report submitted. Case ID: ${String(code)}`, 'success')
+        } else {
+          showToast('Report submitted', 'success')
+        }
+      } catch { showToast('Report submitted', 'success') }
       try { window.dispatchEvent(new CustomEvent('public_report_created', { detail: { lat, lon } })) } catch {}
-      navigate('/public/map')
       setName('')
       setDesc('')
       setCounty('')
       setLat(undefined)
       setLon(undefined)
       setCategoryId(undefined)
+      setVideoFile(null)
       setHp('')
       setAns(undefined)
     } catch (err) {
@@ -96,7 +135,17 @@ export default function ReportForm() {
 
   return (
     <div>
-      <h2>Report Incident (Anonymous)</h2>
+      <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2>Report Incident (Anonymous)</h2>
+        <button type="button" onClick={quickExit} style={{ padding: '6px 10px', background: '#0f172a', color: 'white', borderRadius: 6 }}>Quick Exit</button>
+      </div>
+      {toasts.length > 0 && (
+        <div style={{ display: 'grid', gap: 8, margin: '8px 0' }}>
+          {toasts.map((t) => (
+            <div key={t.id} className="toast">{t.text}</div>
+          ))}
+        </div>
+      )}
       <form onSubmit={submit} style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
         {errorMsg && (
           <div style={{ background: '#fdecec', border: '1px solid #f5c2c7', color: '#842029', padding: 8, borderRadius: 6, marginBottom: 8 }}>
@@ -114,6 +163,8 @@ export default function ReportForm() {
         </select>
         <label>Description</label>
         <textarea name="description" value={desc} onChange={(e) => setDesc(e.target.value)} />
+        <label>Video Evidence (optional)</label>
+        <input name="evidence_video" type="file" accept="video/*" onChange={(e) => setVideoFile(e.target.files?.[0] || null)} />
         <label>County</label>
         <input name="county" value={county} onChange={(e) => setCounty(e.target.value)} />
         <div style={{ display: 'grid', gap: 8 }}>
@@ -160,7 +211,18 @@ export default function ReportForm() {
         </div>
         <button type="submit">Submit</button>
       </form>
-      {status === 'ok' ? <p>Report submitted.</p> : null}
+      {status === 'ok' ? (
+        <div className="card" style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <strong>Report submitted</strong>
+            <div style={{ display: 'inline-flex', gap: 8 }}>
+              <a href="/welcome" style={{ padding: '6px 10px', background: '#0f172a', color: 'white', borderRadius: 6, textDecoration: 'none' }}>Back to Home</a>
+              <a href="/public/map" style={{ padding: '6px 10px', background: '#2563eb', color: 'white', borderRadius: 6, textDecoration: 'none' }}>View Map</a>
+              <a href="/public/track" style={{ padding: '6px 10px', background: '#1f2937', color: 'white', borderRadius: 6, textDecoration: 'none' }}>Track Case</a>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   )
 }

@@ -1,9 +1,10 @@
 import { useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getNeighborhood, listNeighborhoodAlerts, joinNeighborhood, leaveNeighborhood, updateNeighborhoodPolygon } from '../api/neighborhood'
+import { getNeighborhood, listNeighborhoodAlerts, joinNeighborhood, leaveNeighborhood, updateNeighborhoodPolygon, listNeighborhoodMessages, createNeighborhoodMessage, approveNeighborhoodMessage } from '../api/neighborhood'
 import { showToast } from '../lib/toast'
 import { MapContainer, TileLayer, Polygon } from 'react-leaflet'
 import { useState } from 'react'
+import { hasAnyRole, ROLES } from '../lib/roles'
 
 export default function NeighborhoodDetailPage() {
   const params = useParams()
@@ -20,6 +21,12 @@ export default function NeighborhoodDetailPage() {
     queryFn: async () => await listNeighborhoodAlerts(id),
     enabled: Number.isFinite(id)
   })
+  const messages = useQuery({
+    queryKey: ['neighborhood_messages', id],
+    queryFn: async () => await listNeighborhoodMessages(id),
+    enabled: Number.isFinite(id)
+  })
+  const [msgText, setMsgText] = useState('')
   async function follow() {
     try {
       await joinNeighborhood(id)
@@ -98,6 +105,55 @@ export default function NeighborhoodDetailPage() {
           </tbody>
         </table>
       )}
+      <h3 style={{ marginTop: 12 }}>Messages</h3>
+      <div className="card" style={{ padding: 8, marginTop: 8 }}>
+        <div style={{ display: 'grid', gap: 8 }}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <textarea rows={3} placeholder="Write a message to neighbors" value={msgText} onChange={(e) => setMsgText(e.target.value)} />
+            <div>
+              <button onClick={async () => {
+                const t = msgText.trim()
+                if (!t) { showToast('Message is empty', 'error'); return }
+                try {
+                  await createNeighborhoodMessage(id, t)
+                  setMsgText('')
+                  messages.refetch()
+                  showToast('Message sent', 'success')
+                } catch (e: any) {
+                  showToast(e?.message || 'Failed to send message', 'error')
+                }
+              }}>Send</button>
+            </div>
+          </div>
+          {!messages.data || messages.data.length === 0 ? (
+            <p style={{ color: '#666' }}>No messages yet.</p>
+          ) : (
+            <div style={{ display: 'grid', gap: 8 }}>
+              {messages.data.map((m) => (
+                <div key={m.id} style={{ border: '1px solid #eee', borderRadius: 8, padding: 8 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <strong>{m.user_name || `User #${m.user}`}</strong>
+                    <small style={{ color: '#666' }}>{new Date(m.created_at).toLocaleString()}</small>
+                  </div>
+                  <div style={{ marginTop: 6 }}>{m.text}</div>
+                  <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ fontSize: 12, color: m.approved ? '#2d6a4f' : '#b91c1c' }}>{m.approved ? 'Approved' : 'Pending approval'}</span>
+                    {hasAnyRole([ROLES.Admin, ROLES.SuperAdmin]) && (
+                      <>
+                        {m.approved ? (
+                          <button onClick={async () => { try { await approveNeighborhoodMessage(id, m.id, false); messages.refetch(); showToast('Message unapproved', 'success') } catch (e: any) { showToast(e?.message || 'Failed to unapprove', 'error') } }}>Unapprove</button>
+                        ) : (
+                          <button onClick={async () => { try { await approveNeighborhoodMessage(id, m.id, true); messages.refetch(); showToast('Message approved', 'success') } catch (e: any) { showToast(e?.message || 'Failed to approve', 'error') } }}>Approve</button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import { hasAnyRole, ROLES } from '../lib/roles'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { createCrimeReport, listCrimeCategories, listCrimeReports, updateCrimeReport } from '../api/crime'
 import { API_BASE_URL } from '../api/axios'
+import { normalizeCountyName } from '../lib/normalizeCounty'
 import { subscribeAlerts, listSubscriptions, unsubscribeAlert } from '../api/alerts'
 import { showToast } from '../lib/toast'
 import { FormEvent, useEffect, useMemo, useState } from 'react'
@@ -65,29 +66,29 @@ export default function ReportsPage() {
 				if (page) params.set('page', String(page))
 				const res = await fetch(`${API_BASE_URL}/public/reports/?` + params.toString())
 				if (!res.ok) throw e
-				const data = await res.json()
-				setLastErrorStatus(e?.response?.status ?? null)
-				setUsedPublic(true)
-				return {
-					count: data.count ?? data.results?.length ?? 0,
-					next: data.next ?? null,
-					previous: data.previous ?? null,
-					results: (data.results || []).map((r: any) => ({
-						id: r.id,
-						occurance_book_number: r.occurance_book_number ?? '—',
-						name_of_crime: r.name_of_crime,
-						description: r.description,
-						location_name: r.location_name,
-						county: r.county,
-						age: undefined,
-						date_of_arrest: undefined,
-						upload_criminal_photo: null,
-						date_created: r.date_updated,
-						date_updated: r.date_updated,
-						category_of_crime: 0,
-						category_of_crime_name: r.category_of_crime_name
-					}))
-				}
+                const data = await res.json()
+                setLastErrorStatus(e?.response?.status ?? null)
+                setUsedPublic(true)
+                return {
+                    count: data.count ?? data.results?.length ?? 0,
+                    next: data.next ?? null,
+                    previous: data.previous ?? null,
+                    results: (data.results || []).map((r: any) => ({
+                        id: r.id,
+                        occurance_book_number: r.occurance_book_number ?? '—',
+                        name_of_crime: r.name_of_crime,
+                        description: r.description,
+                        location_name: r.location_name,
+                        county: normalizeCountyName(r.county),
+                        age: undefined,
+                        date_of_arrest: undefined,
+                        upload_criminal_photo: null,
+                        date_created: r.date_updated,
+                        date_updated: r.date_updated,
+                        category_of_crime: 0,
+                        category_of_crime_name: r.category_of_crime_name
+                    }))
+                }
 			}
 		}
 	})

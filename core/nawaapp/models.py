@@ -78,6 +78,7 @@ class CrimeReportBook(models.Model):
     name_of_criminal = models.CharField(max_length=60, verbose_name='Name of Criminal', null=True)
     criminal_id_number = models.IntegerField(verbose_name='Criminal Identity Number', null=True)
     upload_criminal_photo = models.ImageField(upload_to="images" , blank=True, null=True)
+    evidence_video = models.FileField(upload_to="videos", blank=True, null=True)
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         verbose_name='Assigned Officer',
@@ -283,3 +284,10 @@ class NeighborhoodMember(models.Model):
     class Meta:
         unique_together = ('neighborhood', 'user')
         ordering = ['-joined_at']
+
+class NeighborhoodMessage(models.Model):
+    neighborhood = models.ForeignKey('Neighborhood', on_delete=models.CASCADE, related_name='messages')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE)
+    text = models.TextField()
+    approved = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)

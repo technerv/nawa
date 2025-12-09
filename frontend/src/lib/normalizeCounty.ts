@@ -124,16 +124,19 @@ export function areAliasesReady(): boolean {
 }
 
 export function normalizeCountyName(name?: string | null): string {
-	if (!name) return ''
-	let key = String(name).trim()
-	if (!key) return ''
-	// remove trailing ' County' if present
-	key = key.replace(/\s+county$/i, '')
-	const lookup = key.toLowerCase().replace(/\s+/g, ' ').trim()
-	if (RUNTIME_COUNTY_ALIASES[lookup]) {
-		return RUNTIME_COUNTY_ALIASES[lookup]
-	}
-	// If aliases are not ready, do not fall back to shipped static map — keep a minimal title-case fallback
+    if (!name) return ''
+    let key = String(name).trim()
+    if (!key) return ''
+    // remove trailing ' County' if present
+    key = key.replace(/\s+county$/i, '')
+    // if value contains no alphabetic characters (likely a coordinate or code), treat as unknown
+    const alphaPresent = /[a-zA-Z]/.test(key)
+    if (!alphaPresent) return ''
+    const lookup = key.toLowerCase().replace(/\s+/g, ' ').trim()
+    if (RUNTIME_COUNTY_ALIASES[lookup]) {
+        return RUNTIME_COUNTY_ALIASES[lookup]
+    }
+    // If aliases are not ready, do not fall back to shipped static map — keep a minimal title-case fallback
 	// This preserves readable URLs while making it explicit that canonical mapping depends on backend.
 	key = key.split(/\s+/).map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ')
 	if (key !== 'Unknown' && !key.endsWith('County')) {

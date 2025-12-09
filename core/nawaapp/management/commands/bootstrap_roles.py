@@ -3,7 +3,7 @@ from django.contrib.auth.models import Group, Permission
 from django.contrib.contenttypes.models import ContentType
 
 from nawaapp.models import CrimeReportBook
-from nawaapp.roles import ALL_ROLES, ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_DISPATCHER, ROLE_FIELD_OFFICER, ROLE_ANALYST, ROLE_REPORTER
+from nawaapp.roles import ALL_ROLES, ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_SUPERVISOR, ROLE_DISPATCHER, ROLE_FIELD_OFFICER, ROLE_ANALYST, ROLE_REPORTER, ROLE_EXTERNAL
 
 
 class Command(BaseCommand):
@@ -30,6 +30,8 @@ class Command(BaseCommand):
 		grant(ROLE_SUPERADMIN, [add_perm, change_perm, delete_perm, view_perm])
 		# Admin: all CRUD
 		grant(ROLE_ADMIN, [add_perm, change_perm, delete_perm, view_perm])
+		# Supervisor: change/view
+		grant(ROLE_SUPERVISOR, [change_perm, view_perm])
 		# Dispatcher: add/change/view
 		grant(ROLE_DISPATCHER, [add_perm, change_perm, view_perm])
 		# Field Officer: change/view (update assigned reports)
@@ -38,6 +40,7 @@ class Command(BaseCommand):
 		grant(ROLE_ANALYST, [view_perm])
 		# Reporter: add/view
 		grant(ROLE_REPORTER, [add_perm, view_perm])
+		# External Agency: view only
+		grant(ROLE_EXTERNAL, [view_perm])
 
 		self.stdout.write(self.style.SUCCESS("Roles/groups bootstrapped with permissions."))
-

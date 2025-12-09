@@ -24,3 +24,22 @@ export async function unsubscribeAlert(id: number) {
   const res = await api.delete<{ detail: string }>('/alerts/subscribe/', { data: { id } })
   return res.data
 }
+
+export async function sendSOS(payload: { latitude?: number; longitude?: number; location_name?: string; location_description?: string; county?: string; notify_phone?: string; notify_message?: string }) {
+  const { API_BASE_URL } = await import('./axios')
+  const res = await fetch(`${API_BASE_URL}/public/sos/`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {})
+  })
+  if (!res.ok) {
+    const txt = await res.text()
+    let msg = txt || 'SOS failed'
+    try {
+      const j = JSON.parse(txt)
+      msg = (j && j.detail) || msg
+    } catch {}
+    throw new Error(String(msg))
+  }
+  return await res.json()
+}
