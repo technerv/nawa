@@ -367,14 +367,6 @@ export default function PublicMapPage() {
                                     Severity: {p.severity}
                                     <br />
                                     Updated: {new Date(p.date_updated).toLocaleString()}
-                                    <div style={{ marginTop: 8 }}>
-                                        <a
-                                            href={`/public/track?${p.occurance_book_number ? `ob=${encodeURIComponent(p.occurance_book_number)}` : `id=${p.id}`}`}
-                                            style={{ padding: '6px 10px', background: '#f59e0b', color: '#111827', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}
-                                        >
-                                            Track Case
-                                        </a>
-                                    </div>
                                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                                         <button
                                             style={{ padding: '6px 10px', background: '#dc2626', color: 'white', borderRadius: 6 }}
@@ -387,15 +379,25 @@ export default function PublicMapPage() {
                                             Open SOS
                                         </button>
                                         <button
-                                            style={{ padding: '6px 10px', background: '#2563eb', color: 'white', borderRadius: 6 }}
+                                            style={{ padding: '6px 10px', background: '#25D366', color: '#111827', borderRadius: 6 }}
                                             onClick={() => {
-                                                const message = `[${String(p.severity || '').toUpperCase()}] SOS: ${p.name_of_crime} — ${p.location_name || coords}`
-                                                const payload = { latitude: p.latitude, longitude: p.longitude, location_name: p.location_name || `Map ${coords}`, county: countyName, notify_message: message }
-                                                window.dispatchEvent(new CustomEvent('sos_request', { detail: payload }))
+                                                const path = `/public/track?${p.occurance_book_number ? `ob=${encodeURIComponent(p.occurance_book_number)}` : `id=${p.id}`}`
+                                                const trackUrl = `${window.location.origin}${path}`
+                                                const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${p.latitude},${p.longitude}`
+                                                const loc = p.location_name || coords
+                                                const text = `Alert: ${p.name_of_crime}\nCounty: ${countyName || '—'}\nSub-County: ${scName || '—'}\nLocation: ${loc}\nGPS: ${mapsUrl}\nTrack: ${trackUrl}`
+                                                const url = `https://wa.me/?text=${encodeURIComponent(text)}`
+                                                window.open(url, '_blank')
                                             }}
                                         >
-                                            Quick SOS
+                                            Send via WhatsApp
                                         </button>
+                                        <a
+                                            href={`/public/track?${p.occurance_book_number ? `ob=${encodeURIComponent(p.occurance_book_number)}` : `id=${p.id}`}`}
+                                            style={{ padding: '6px 10px', background: '#f59e0b', color: '#111827', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}
+                                        >
+                                            Track Case
+                                        </a>
                                     </div>
                                 </Popup>
                             </Marker>

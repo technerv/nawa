@@ -10,6 +10,7 @@ import DashboardPage from './pages/DashboardPage'
 import PublicDashboardPage from './pages/PublicDashboardPage'
 import ReportForm from './pages/ReportForm'
 import PublicMapPage from './pages/PublicMapPage'
+import MapboxPreviewPage from './pages/MapboxPreviewPage'
 import TrackCasePage from './pages/TrackCasePage'
 import AdminAlertsPage from './pages/AdminAlertsPage'
 import AdminUsersPage from './pages/AdminUsersPage'
@@ -208,6 +209,7 @@ export default function App() {
                                     <A to="/categories">Categories</A>
                                     <A to="/reports">Report Incident</A>
                                     <A to="/map">Map</A>
+                                    <A to="/mapbox/preview">Vector Map Preview</A>
                             {(roles.includes('Admin') || roles.includes('Dispatcher') || roles.includes('SuperAdmin')) && (
                                 <A to="/admin/alerts">Alerts</A>
                             )}
@@ -273,6 +275,7 @@ export default function App() {
                     <Route path="/" element={<WelcomePage />} />
                     <Route path="/public/dashboard" element={<PublicDashboardPage />} />
                     <Route path="/public/map" element={<PublicMapPage />} />
+                    <Route path="/mapbox/preview" element={<MapboxPreviewPage />} />
                     <Route path="/public/report" element={<ReportForm />} />
                     <Route path="/public/track" element={<TrackCasePage />} />
                     <Route path="/welcome" element={<WelcomePage />} />
@@ -290,13 +293,18 @@ export default function App() {
                         path="/register"
                         element={roles && (roles.includes('Admin') || roles.includes('SuperAdmin')) ? <RegisterPage /> : <Navigate to="/welcome" replace />}
                     />
-				</Routes>
-			</main>
-			{!(loc.pathname === '/public/track' || loc.pathname === '/public/report') && (
-				<div style={{ position: 'fixed', right: 16, top: 16, display: 'grid', gap: 8, zIndex: 10000 }}>
-					{toasts.map((t) => (
-						<div key={t.id} className="toast">
-							{t.text}
+                </Routes>
+            </main>
+            {!(loc.pathname === '/' || loc.pathname === '/welcome') && (
+                <footer style={{ marginTop: 12, padding: 12, textAlign: 'center', color: '#9ca3af' }}>
+                    © 2025 NAWA
+                </footer>
+            )}
+            {!(loc.pathname === '/public/track' || loc.pathname === '/public/report') && (
+                <div style={{ position: 'fixed', right: 16, top: 16, display: 'grid', gap: 8, zIndex: 10000 }}>
+                    {toasts.map((t) => (
+                        <div key={t.id} className="toast">
+                            {t.text}
 						</div>
 					))}
 				</div>

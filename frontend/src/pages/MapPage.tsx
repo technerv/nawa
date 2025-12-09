@@ -454,7 +454,31 @@ export default function MapPage() {
                                     Sub-County: {scName || '—'}
                                     <br />
                                     Updated: {new Date(point.date_updated).toLocaleString()}
-                                    <div style={{ marginTop: 8 }}>
+                                    <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                                        <button
+                                            style={{ padding: '6px 10px', background: '#dc2626', color: 'white', borderRadius: 6 }}
+                                            onClick={() => {
+                                                const message = `[${String(point.severity || '').toUpperCase()}] SOS: ${point.name_of_crime} — ${point.location_name || coords}`
+                                                const payload = { latitude: point.latitude, longitude: point.longitude, location_name: point.location_name || `Map ${coords}`, county: countyName }
+                                                window.dispatchEvent(new CustomEvent('open_sos', { detail: { payload, message } }))
+                                            }}
+                                        >
+                                            Open SOS
+                                        </button>
+                                        <button
+                                            style={{ padding: '6px 10px', background: '#25D366', color: '#111827', borderRadius: 6 }}
+                                            onClick={() => {
+                                                const path = `/public/track?${point.occurance_book_number ? `ob=${encodeURIComponent(point.occurance_book_number)}` : `id=${point.id}`}`
+                                                const trackUrl = `${window.location.origin}${path}`
+                                                const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${point.latitude},${point.longitude}`
+                                                const loc = point.location_name || coords
+                                                const text = `Alert: ${point.name_of_crime}\nCounty: ${countyName || '—'}\nSub-County: ${scName || '—'}\nLocation: ${loc}\nGPS: ${mapsUrl}\nTrack: ${trackUrl}`
+                                                const url = `https://wa.me/?text=${encodeURIComponent(text)}`
+                                                window.open(url, '_blank')
+                                            }}
+                                        >
+                                            Send via WhatsApp
+                                        </button>
                                         <a
                                             href={`/public/track?${point.occurance_book_number ? `ob=${encodeURIComponent(point.occurance_book_number)}` : `id=${point.id}`}`}
                                             style={{ padding: '6px 10px', background: '#f59e0b', color: '#111827', borderRadius: 6, textDecoration: 'none', fontWeight: 600 }}
@@ -466,7 +490,7 @@ export default function MapPage() {
                             </Marker>
                         )
                     })}
-				</MapContainer>
+                </MapContainer>
 			</div>
 		</div>
 	)
