@@ -11,10 +11,12 @@ import DashboardPage from './pages/DashboardPage'
 import PublicDashboardPage from './pages/PublicDashboardPage'
 import ReportForm from './pages/ReportForm'
 import PublicMapPage from './pages/PublicMapPage'
-import MapboxPreviewPage from './pages/MapboxPreviewPage'
 import TrackCasePage from './pages/TrackCasePage'
 import AdminAlertsPage from './pages/AdminAlertsPage'
 import AdminUsersPage from './pages/AdminUsersPage'
+import TriageConfigPage from './pages/TriageConfigPage'
+import DashboardRouter from './components/DashboardRouter'
+import SuperAdminDashboardPage from './pages/SuperAdminDashboardPage'
 import NeighborhoodJoinPage from './pages/NeighborhoodJoinPage'
 import { initCountyAliases, areAliasesReady, getAliasSource } from './lib/normalizeCounty'
 import MyNeighborhoodPage from './pages/MyNeighborhoodPage'
@@ -229,10 +231,20 @@ export default function App() {
 		setRoles([])
 		setUsername(null)
 	}
+	const [isScrolled, setIsScrolled] = useState(false)
+
+	useEffect(() => {
+		function handleScroll() {
+			setIsScrolled(window.scrollY > 50)
+		}
+		window.addEventListener('scroll', handleScroll)
+		return () => window.removeEventListener('scroll', handleScroll)
+	}, [])
+
 	return (
 		<div className="min-h-screen bg-light">
 			{!(loc.pathname === '/' || loc.pathname === '/welcome') && (
-				<header className="bg-primary shadow">
+				<header className={`bg-primary shadow transition-all duration-300 ${isScrolled ? 'fixed top-0 left-0 right-0 z-50' : ''}`}>
 					<div className="container mx-auto px-4">
 						<div className="flex items-center justify-between h-16">
 							<h1 className="text-white text-xl font-bold">
@@ -246,13 +258,13 @@ export default function App() {
 										<StyledNavLink to="/reports/create">Create Report</StyledNavLink>
 										<StyledNavLink to="/reports">Reports</StyledNavLink>
 										<StyledNavLink to="/map">Map</StyledNavLink>
-										<StyledNavLink to="/mapbox/preview">Vector Map Preview</StyledNavLink>
 										{(roles.includes('Admin') ||
 											roles.includes('Dispatcher') ||
 											roles.includes('SuperAdmin')) && (
 											<StyledNavLink to="/admin/alerts">Alerts</StyledNavLink>
 										)}
 										{(roles.includes('Admin') ||
+											roles.includes('SecurityOrgUser') ||
 											roles.includes('SuperAdmin')) && (
 											<StyledNavLink to="/admin/users">Users</StyledNavLink>
 										)}
@@ -306,7 +318,7 @@ export default function App() {
 					</div>
 				</div>
 			)}
-			<main className="container mx-auto px-4 py-8">
+			<main className={`container mx-auto px-4 py-8 ${isScrolled && !(loc.pathname === '/' || loc.pathname === '/welcome') ? 'pt-24' : ''}`}>
 				{roles &&
 					roles.length > 0 &&
 					!(loc.pathname === '/' || loc.pathname === '/welcome') && (
@@ -315,8 +327,8 @@ export default function App() {
 								<div className="font-semibold">
 									Welcome{username ? `, ${username}` : ''}
 								</div>
-								<div className="text-sm text-gray-500">
-									Roles: {roles?.join(', ')}
+									<div className="text-sm text-gray-500">
+										Roles: {roles?.join(', ')}
 								</div>
 							</div>
 						</div>
@@ -325,7 +337,6 @@ export default function App() {
 					<Route path="/" element={<WelcomePage />} />
 					<Route path="/public/dashboard" element={<PublicDashboardPage />} />
 					<Route path="/public/map" element={<PublicMapPage />} />
-					<Route path="/mapbox/preview" element={<MapboxPreviewPage />} />
 					<Route path="/public/report" element={<ReportForm />} />
 					<Route path="/public/track" element={<TrackCasePage />} />
 					<Route path="/welcome" element={<WelcomePage />} />
@@ -333,7 +344,7 @@ export default function App() {
 						path="/dashboard"
 						element={
 							<RequireAuth>
-								<DashboardPage />
+								<DashboardRouter />
 							</RequireAuth>
 						}
 					/>
@@ -386,6 +397,14 @@ export default function App() {
 						}
 					/>
 					<Route
+						path="/admin/analytics"
+						element={
+							<RequireAuth>
+								<SuperAdminDashboardPage />
+							</RequireAuth>
+						}
+					/>
+					<Route
 						path="/neighborhood/join"
 						element={
 							<RequireAuth>
@@ -410,15 +429,11 @@ export default function App() {
 						}
 					/>
 					<Route path="/login" element={<LoginPage />} />
+					{/* Registration disabled - only SuperAdmin can create accounts via backend admin */}
 					<Route
 						path="/register"
 						element={
-							roles &&
-							(roles.includes('Admin') || roles.includes('SuperAdmin')) ? (
-								<RegisterPage />
-							) : (
 								<Navigate to="/welcome" replace />
-							)
 						}
 					/>
 				</Routes>
@@ -439,8 +454,8 @@ export default function App() {
 						const countyName = countyMatch ? countyMatch[1].trim() : null
 						
 						return (
-							<div
-								key={t.id}
+						<div
+							key={t.id}
 								className={`bg-primary text-white px-4 py-2 rounded-md shadow-lg ${
 									isClickable ? 'cursor-pointer hover:bg-secondary transition-colors' : ''
 								}`}
@@ -450,9 +465,9 @@ export default function App() {
 									}
 								} : undefined}
 								title={isClickable ? `Click to view incidents in ${countyName}` : undefined}
-							>
-								{t.text}
-							</div>
+						>
+							{t.text}
+						</div>
 						)
 					})}
 				</div>
@@ -524,27 +539,27 @@ export default function App() {
 							<div className="mb-4">
 								<label className="block text-sm font-medium text-gray-700 mb-2">Emergency Numbers</label>
 								<div className="flex flex-wrap gap-2">
-									{emNums.map((n, i) => (
-										<a
-											key={i}
-											href={n.tel}
+							{emNums.map((n, i) => (
+								<a
+									key={i}
+									href={n.tel}
 											className="px-3 py-2 bg-primary text-white rounded-md text-sm hover:bg-secondary transition-colors font-medium"
-										>
-											{n.name}: {n.number}
-										</a>
-									))}
-								</div>
+								>
+									{n.name}: {n.number}
+								</a>
+							))}
+						</div>
 							</div>
 						)}
 						<div className="grid gap-4">
 							<div>
 								<label className="block text-sm font-medium text-gray-700 mb-1">Phone number to notify (optional)</label>
-								<input
+							<input
 									placeholder="Enter phone number"
-									value={sosPhone}
-									onChange={e => setSosPhone(e.target.value)}
+								value={sosPhone}
+								onChange={e => setSosPhone(e.target.value)}
 									className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-								/>
+							/>
 							</div>
 							{(sosPhone || '').trim() && (
 								<a
@@ -556,13 +571,13 @@ export default function App() {
 							)}
 							<div>
 								<label className="block text-sm font-medium text-gray-700 mb-1">Message to send (optional)</label>
-								<textarea
+							<textarea
 									rows={3}
 									placeholder="Enter your message"
-									value={sosCustomMessage}
-									onChange={e => setSosCustomMessage(e.target.value)}
+								value={sosCustomMessage}
+								onChange={e => setSosCustomMessage(e.target.value)}
 									className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent resize-y"
-								/>
+							/>
 							</div>
 							<button
 								disabled={sosSending}

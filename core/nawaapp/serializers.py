@@ -96,14 +96,30 @@ class CrimeReportBookSerializer(serializers.ModelSerializer):
     risk_score = serializers.SerializerMethodField()
 
     def validate(self, attrs):
+        from decimal import Decimal, ROUND_HALF_UP
         latitude = attrs.get('latitude', getattr(self.instance, 'latitude', None))
         longitude = attrs.get('longitude', getattr(self.instance, 'longitude', None))
         if (latitude is None) ^ (longitude is None):
             raise serializers.ValidationError('Latitude and longitude must both be provided together.')
-        if latitude is not None and not (-90 <= float(latitude) <= 90):
-            raise serializers.ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
-        if longitude is not None and not (-180 <= float(longitude) <= 180):
-            raise serializers.ValidationError({'longitude': 'Longitude must be between -180 and 180.'})
+        
+        # Validate and normalize latitude to 6 decimal places
+        if latitude is not None:
+            lat_decimal = Decimal(str(latitude))
+            if not (-90 <= float(lat_decimal) <= 90):
+                raise serializers.ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
+            # Normalize to 6 decimal places (round if more than 6)
+            q = Decimal('0.000001')
+            attrs['latitude'] = lat_decimal.quantize(q, rounding=ROUND_HALF_UP)
+        
+        # Validate and normalize longitude to 6 decimal places
+        if longitude is not None:
+            lon_decimal = Decimal(str(longitude))
+            if not (-180 <= float(lon_decimal) <= 180):
+                raise serializers.ValidationError({'longitude': 'Longitude must be between -180 and 180.'})
+            # Normalize to 6 decimal places (round if more than 6)
+            q = Decimal('0.000001')
+            attrs['longitude'] = lon_decimal.quantize(q, rounding=ROUND_HALF_UP)
+        
         return attrs
     
     def validate_criminal_id_number(self, value):

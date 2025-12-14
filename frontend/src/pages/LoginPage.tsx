@@ -50,8 +50,9 @@ export default function LoginPage() {
 			<div className="max-w-md w-full">
 				<div className="bg-white shadow-xl rounded-2xl p-8 border border-gray-100">
 					<div className="text-center mb-8">
-						<h2 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">Admin Login</h2>
-						<p className="text-gray-600">Sign in to access the admin dashboard</p>
+						<h2 className="text-3xl font-bold mb-2 bg-clip-text text-transparent bg-gradient-to-r from-primary to-secondary">Security Org Login</h2>
+						<p className="text-gray-600">For Security Org Users and SuperAdmin only</p>
+						<p className="text-xs text-gray-500 mt-2">Accounts must be whitelisted by SuperAdmin</p>
 					</div>
 					<form onSubmit={onSubmit} className="grid gap-5">
 						<div>

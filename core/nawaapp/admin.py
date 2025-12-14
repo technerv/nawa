@@ -1,5 +1,12 @@
 from django.contrib import admin
-from .models import CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog, UserProfile, AlertSubscription, AlertEvent, Neighborhood, NeighborhoodMember
+from django.contrib.auth import get_user_model
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from .models import (
+    CrimeCategory, CrimeReportBook, CrimeWitness, CrimeReportBookAuditLog,
+    UserProfile, AlertSubscription, AlertEvent, Neighborhood, NeighborhoodMember,
+    AnonymousSession, SecurityOrgWhitelist, DeviceFingerprint
+)
+from .roles import ROLE_SUPERADMIN, ROLE_SECURITY_ORG
 # from leaflet.admin import LeafletGeoAdmin
 # Register your models here.
 #admin.site.register(CrimeReportBook)
@@ -137,3 +144,158 @@ class NeighborhoodMemberAdmin(admin.ModelAdmin):
     list_display = ('neighborhood', 'user', 'role', 'joined_at')
     search_fields = ('neighborhood__name', 'user__username')
     list_filter = ('role', 'joined_at')
+
+
+@admin.register(AnonymousSession)
+class AnonymousSessionAdmin(admin.ModelAdmin):
+    list_display = ('session_id', 'device_fingerprint', 'ip_address', 'report_count', 'is_blocked', 'first_seen', 'last_seen')
+    list_filter = ('is_blocked', 'first_seen', 'last_seen')
+    search_fields = ('session_id', 'device_fingerprint', 'ip_address')
+    readonly_fields = ('session_id', 'device_fingerprint', 'ip_address', 'user_agent', 'first_seen', 'last_seen', 'report_count')
+    fieldsets = (
+        (None, {
+            'fields': ('session_id', 'device_fingerprint', 'ip_address', 'user_agent')
+        }),
+        ('Statistics', {
+            'fields': ('report_count', 'first_seen', 'last_seen')
+        }),
+        ('Blocking', {
+            'fields': ('is_blocked', 'blocked_reason', 'blocked_at')
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        return False  # Sessions are auto-created
+    
+    actions = ['block_sessions', 'unblock_sessions']
+    
+    def block_sessions(self, request, queryset):
+        from django.utils import timezone
+        count = queryset.update(is_blocked=True, blocked_at=timezone.now(), blocked_reason='Blocked by admin')
+        self.message_user(request, f'{count} sessions blocked.')
+    block_sessions.short_description = 'Block selected sessions'
+    
+    def unblock_sessions(self, request, queryset):
+        count = queryset.update(is_blocked=False, blocked_reason=None, blocked_at=None)
+        self.message_user(request, f'{count} sessions unblocked.')
+    unblock_sessions.short_description = 'Unblock selected sessions'
+
+
+@admin.register(SecurityOrgWhitelist)
+class SecurityOrgWhitelistAdmin(admin.ModelAdmin):
+    list_display = ('organization_name', 'organization_type', 'user', 'is_active', 'contact_person', 'created_at')
+    list_filter = ('organization_type', 'is_active', 'created_at')
+    search_fields = ('organization_name', 'contact_person', 'contact_email', 'contact_phone', 'user__username')
+    fieldsets = (
+        ('Organization', {
+            'fields': ('organization_name', 'organization_type', 'user', 'is_active')
+        }),
+        ('Contact Information', {
+            'fields': ('contact_person', 'contact_email', 'contact_phone')
+        }),
+        ('Access Control', {
+            'fields': ('allowed_ip_ranges', 'allowed_vpn_names'),
+            'description': 'IP ranges in CIDR notation (e.g., ["192.168.1.0/24", "10.0.0.0/8"])'
+        }),
+        ('Metadata', {
+            'fields': ('notes', 'created_by', 'created_at', 'updated_at')
+        }),
+    )
+    readonly_fields = ('created_at', 'updated_at')
+    
+    def save_model(self, request, obj, form, change):
+        if not change:  # New object
+            obj.created_by = request.user
+        super().save_model(request, obj, form, change)
+
+
+@admin.register(DeviceFingerprint)
+class DeviceFingerprintAdmin(admin.ModelAdmin):
+    list_display = ('fingerprint_hash', 'ip_address', 'report_count', 'abuse_score', 'is_blocked', 'first_seen', 'last_seen')
+    list_filter = ('is_blocked', 'first_seen', 'last_seen')
+    search_fields = ('fingerprint_hash', 'ip_address')
+    readonly_fields = ('fingerprint_hash', 'ip_address', 'user_agent', 'first_seen', 'last_seen', 'report_count', 'metadata')
+    fieldsets = (
+        ('Device Info', {
+            'fields': ('fingerprint_hash', 'ip_address', 'user_agent')
+        }),
+        ('Statistics', {
+            'fields': ('report_count', 'abuse_score', 'first_seen', 'last_seen', 'metadata')
+        }),
+        ('Blocking', {
+            'fields': ('is_blocked', 'blocked_reason', 'blocked_at')
+        }),
+    )
+    
+    def has_add_permission(self, request):
+        return False  # Fingerprints are auto-created
+    
+    actions = ['block_devices', 'unblock_devices', 'reset_abuse_score']
+    
+    def block_devices(self, request, queryset):
+        from django.utils import timezone
+        count = queryset.update(is_blocked=True, blocked_at=timezone.now(), blocked_reason='Blocked by admin')
+        self.message_user(request, f'{count} devices blocked.')
+    block_devices.short_description = 'Block selected devices'
+    
+    def unblock_devices(self, request, queryset):
+        count = queryset.update(is_blocked=False, blocked_reason=None, blocked_at=None)
+        self.message_user(request, f'{count} devices unblocked.')
+    unblock_devices.short_description = 'Unblock selected devices'
+    
+    def reset_abuse_score(self, request, queryset):
+        count = queryset.update(abuse_score=0.0)
+        self.message_user(request, f'Abuse score reset for {count} devices.')
+    reset_abuse_score.short_description = 'Reset abuse score'
+
+
+# Enhanced User Admin for Security Org User Management
+User = get_user_model()
+
+class SecurityOrgUserAdmin(BaseUserAdmin):
+    """Custom admin for creating/managing Security Org Users"""
+    
+    def get_queryset(self, request):
+        qs = super().get_queryset(request)
+        # Show all users, but filter by role in list view
+        return qs
+    
+    list_display = BaseUserAdmin.list_display + ('is_security_org', 'is_superadmin', 'whitelist_status')
+    list_filter = BaseUserAdmin.list_filter + ('groups',)
+    
+    def is_security_org(self, obj):
+        return obj.groups.filter(name=ROLE_SECURITY_ORG).exists()
+    is_security_org.boolean = True
+    is_security_org.short_description = 'Security Org'
+    
+    def is_superadmin(self, obj):
+        return obj.groups.filter(name=ROLE_SUPERADMIN).exists()
+    is_superadmin.boolean = True
+    is_superadmin.short_description = 'SuperAdmin'
+    
+    def whitelist_status(self, obj):
+        if hasattr(obj, 'security_org_whitelist'):
+            wl = obj.security_org_whitelist
+            status = "✓ Active" if wl.is_active else "✗ Inactive"
+            return f"{wl.organization_name} - {status}"
+        return "Not whitelisted"
+    whitelist_status.short_description = 'Whitelist Status'
+    
+    def save_model(self, request, obj, form, change):
+        """Auto-assign SecurityOrgUser role if user is being whitelisted"""
+        super().save_model(request, obj, form, change)
+        
+        # If user has whitelist entry, ensure they have SecurityOrgUser role
+        if hasattr(obj, 'security_org_whitelist') and obj.security_org_whitelist.is_active:
+            from django.contrib.auth.models import Group
+            security_group, _ = Group.objects.get_or_create(name=ROLE_SECURITY_ORG)
+            if security_group not in obj.groups.all():
+                obj.groups.add(security_group)
+
+
+# Unregister default User admin and register custom one
+try:
+    admin.site.unregister(User)
+except admin.sites.NotRegistered:
+    pass
+admin.site.register(User, SecurityOrgUserAdmin)

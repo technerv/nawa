@@ -31,7 +31,7 @@ export default function CategoriesPage() {
 		createMut.mutate()
 	}
 
-	const canCreate = hasAnyRole([ROLES.Admin, ROLES.Dispatcher, ROLES.SuperAdmin])
+	const canCreate = hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin, ROLES.Dispatcher])
 	return (
 		<div className="space-y-6">
 			<div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6">

@@ -1,11 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPublicCrimeReport, listCrimeCategories } from '../api/crime'
 import { useQuery } from '@tanstack/react-query'
 import { showToast } from '../lib/toast'
-import { MapContainer, TileLayer, Marker, useMapEvents, Popup } from 'react-leaflet'
+import { MapContainer, TileLayer, Marker, useMapEvents, Popup, useMap } from 'react-leaflet'
 import { defaultMarkerIcon } from '../lib/leafletIcons'
 import { normalizeCountyName, initCountyAliases, areAliasesReady } from '../lib/normalizeCounty'
 import { useNavigate } from 'react-router-dom'
+import MediaRecorder from '../components/MediaRecorder'
 
 export default function ReportForm() {
   const [name, setName] = useState('')
@@ -17,6 +18,8 @@ export default function ReportForm() {
   const [status, setStatus] = useState<string | null>(null)
   const [errorMsg, setErrorMsg] = useState<string | null>(null)
   const [videoFile, setVideoFile] = useState<File | null>(null)
+  const [audioFile, setAudioFile] = useState<File | null>(null)
+  const [showMediaRecorder, setShowMediaRecorder] = useState(false)
   const cats = useQuery({ queryKey: ['categories', { for: 'public_report' }], queryFn: () => listCrimeCategories() })
   const navigate = useNavigate()
   const [hp, setHp] = useState('')
@@ -24,6 +27,26 @@ export default function ReportForm() {
   const [cb, setCb] = useState<number>(0)
   const [ans, setAns] = useState<number | undefined>()
   const [toasts, setToasts] = useState<{ id: number; text: string; type: 'success' | 'error' | 'info' }[]>([])
+  
+  // Anonymous session tracking
+  const [sessionId, setSessionId] = useState<string | null>(() => {
+    // Try to get existing session ID from localStorage
+    try {
+      const stored = localStorage.getItem('nawa_anonymous_session_id')
+      if (stored) return stored
+    } catch {}
+    return null
+  })
+  
+  // Location search state
+  const [locationSearch, setLocationSearch] = useState('')
+  const [searchResults, setSearchResults] = useState<any[]>([])
+  const [showSuggestions, setShowSuggestions] = useState(false)
+  const [isSearching, setIsSearching] = useState(false)
+  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const suggestionsRef = useRef<HTMLDivElement>(null)
+  
   useEffect(() => {
     function onToast(e: any) {
       const { text, type } = e?.detail || {}
@@ -52,7 +75,7 @@ export default function ReportForm() {
     if (lat == null || lon == null) return
     const controller = new AbortController()
     const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=10&addressdetails=1`
-    fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json' } })
+    fetch(url, { signal: controller.signal, headers: { 'Accept': 'application/json', 'User-Agent': 'NAWA-App/1.0' } })
       .then((res) => res.ok ? res.json() : Promise.reject(new Error(String(res.status))))
       .then((data) => {
         const addr = data?.address || {}
@@ -63,6 +86,100 @@ export default function ReportForm() {
     return () => controller.abort()
   }, [lat, lon])
 
+  // Geocoding search function
+  async function searchLocation(query: string) {
+    if (!query || query.trim().length < 3) {
+      setSearchResults([])
+      setShowSuggestions(false)
+      return
+    }
+
+    setIsSearching(true)
+    try {
+      // Focus on Kenya region - bounding box for Kenya
+      const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&q=${encodeURIComponent(query)}&limit=5&bounded=1&viewbox=33.9,-4.7,41.9,5.5&countrycodes=ke`
+      const res = await fetch(url, {
+        headers: {
+          'Accept': 'application/json',
+          'User-Agent': 'NAWA-App/1.0'
+        }
+      })
+      if (!res.ok) {
+        setSearchResults([])
+        return
+      }
+      const data = await res.json()
+      setSearchResults(Array.isArray(data) ? data : [])
+      setShowSuggestions(true)
+    } catch (error) {
+      setSearchResults([])
+      showToast('Failed to search location', 'error')
+    } finally {
+      setIsSearching(false)
+    }
+  }
+
+  // Debounced search
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current)
+    }
+
+    searchTimeoutRef.current = setTimeout(() => {
+      if (locationSearch.trim()) {
+        searchLocation(locationSearch)
+      } else {
+        setSearchResults([])
+        setShowSuggestions(false)
+      }
+    }, 500) // 500ms debounce
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current)
+      }
+    }
+  }, [locationSearch])
+
+  // Handle location selection from search results
+  function selectLocation(result: any) {
+    const resultLat = parseFloat(result.lat)
+    const resultLon = parseFloat(result.lon)
+    
+    if (isNaN(resultLat) || isNaN(resultLon)) {
+      showToast('Invalid location coordinates', 'error')
+      return
+    }
+
+    const ra = Math.round(resultLat * 1e6) / 1e6
+    const rb = Math.round(resultLon * 1e6) / 1e6
+    setLat(ra)
+    setLon(rb)
+    setLocationSearch(result.display_name || result.name || '')
+    setSearchResults([])
+    setShowSuggestions(false)
+    showToast('Location set', 'success')
+  }
+
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (
+        suggestionsRef.current &&
+        !suggestionsRef.current.contains(event.target as Node) &&
+        searchInputRef.current &&
+        !searchInputRef.current.contains(event.target as Node)
+      ) {
+        setShowSuggestions(false)
+      }
+    }
+
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside)
+    }
+  }, [])
+
   function quickExit() {
     setName('')
     setDesc('')
@@ -71,8 +188,13 @@ export default function ReportForm() {
     setLon(undefined)
     setCategoryId(undefined)
     setVideoFile(null)
+    setAudioFile(null)
     setHp('')
     setAns(undefined)
+    setLocationSearch('')
+    setSearchResults([])
+    setShowSuggestions(false)
+    setShowMediaRecorder(false)
     try { navigate('/welcome') } catch {}
   }
 
@@ -102,13 +224,32 @@ export default function ReportForm() {
         longitude: lon,
         category_of_crime: categoryId!,
         evidence_video_file: videoFile || undefined,
+        evidence_audio_file: audioFile || undefined,
         honeypot: hp,
         captcha_a: ca,
         captcha_b: cb,
         captcha_answer: ans ?? -1
       }
-      const resp = await createPublicCrimeReport(payload)
+      // Include session ID in request
+      const headers: HeadersInit = {}
+      if (sessionId) {
+        headers['X-Session-ID'] = sessionId
+      }
+      
+      // For FormData requests, we need to add session_id to the form
+      const finalPayload = { ...payload, session_id: sessionId || undefined }
+      
+      const resp = await createPublicCrimeReport(finalPayload)
       setStatus('ok')
+      
+      // Store session ID if returned
+      if (resp.session_id) {
+        try {
+          localStorage.setItem('nawa_anonymous_session_id', resp.session_id)
+          setSessionId(resp.session_id)
+        } catch {}
+      }
+      
       try {
         const code = (resp && (resp.code || resp.tracking_code || resp.id || resp.occurance_book_number))
         if (code) {
@@ -125,8 +266,13 @@ export default function ReportForm() {
       setLon(undefined)
       setCategoryId(undefined)
       setVideoFile(null)
+      setAudioFile(null)
       setHp('')
       setAns(undefined)
+      setLocationSearch('')
+      setSearchResults([])
+      setShowSuggestions(false)
+      setShowMediaRecorder(false)
     } catch (err) {
       setStatus('error')
       setErrorMsg((err as any)?.message || 'Submission failed')
@@ -137,7 +283,7 @@ export default function ReportForm() {
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
         <div className="flex justify-between items-center">
-          <div>
+    <div>
             <h2 className="text-3xl font-bold mb-2">Report Incident (Anonymous)</h2>
             <p className="text-gray-100 text-sm">Report a crime incident safely and anonymously</p>
           </div>
@@ -169,11 +315,11 @@ export default function ReportForm() {
       <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
         <h3 className="text-xl font-bold mb-4 text-gray-800 border-b pb-3">Incident Details</h3>
         <form onSubmit={submit} className="grid gap-4 max-w-3xl">
-          {errorMsg && (
+        {errorMsg && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-red-800">
-              {errorMsg}
-            </div>
-          )}
+            {errorMsg}
+          </div>
+        )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Name of Crime <span className="text-red-500">*</span></label>
@@ -195,11 +341,11 @@ export default function ReportForm() {
                 onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
               >
-                <option value="">Select category</option>
-                {cats.data?.results.map((c) => (
-                  <option key={c.id} value={c.id}>{c.crime_category} ({c.crime_short_code})</option>
-                ))}
-              </select>
+          <option value="">Select category</option>
+          {cats.data?.results.map((c) => (
+            <option key={c.id} value={c.id}>{c.crime_category} ({c.crime_short_code})</option>
+          ))}
+        </select>
             </div>
           </div>
           <div>
@@ -213,27 +359,121 @@ export default function ReportForm() {
               placeholder="Provide a detailed description (minimum 20 characters)"
             />
           </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Search Location <span className="text-gray-500 text-xs">(Type to search)</span></label>
+            <div className="relative">
+              <input 
+                ref={searchInputRef}
+                type="text"
+                name="location_search" 
+                placeholder="Search for a location (e.g., Nairobi, Mombasa, Kitui Town)" 
+                value={locationSearch} 
+                onChange={(e) => {
+                  setLocationSearch(e.target.value)
+                  setShowSuggestions(true)
+                }}
+                onFocus={() => {
+                  if (searchResults.length > 0) {
+                    setShowSuggestions(true)
+                  }
+                }}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent pr-10"
+              />
+              {isSearching && (
+                <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary"></div>
+                </div>
+              )}
+              {showSuggestions && searchResults.length > 0 && (
+                <div 
+                  ref={suggestionsRef}
+                  className="absolute z-50 w-full mt-1 bg-white border border-gray-300 rounded-md shadow-lg max-h-60 overflow-auto"
+                >
+                  {searchResults.map((result, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => selectLocation(result)}
+                      className="w-full text-left px-4 py-2 hover:bg-blue-50 border-b border-gray-100 last:border-b-0 transition-colors"
+                    >
+                      <div className="font-medium text-gray-800">{result.display_name || result.name}</div>
+                      {result.type && (
+                        <div className="text-xs text-gray-500">{result.type}</div>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+            <small className="text-gray-500 text-xs mt-1 block">Start typing to search for locations in Kenya</small>
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
+            <input 
+              name="county" 
+              value={county} 
+              onChange={(e) => setCounty(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+              placeholder="County name (auto-filled from location)"
+              readOnly
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Record Evidence (optional)</label>
+            {!showMediaRecorder ? (
+              <div className="flex gap-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setShowMediaRecorder(true)}
+                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors font-medium flex items-center gap-2"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                  Record Audio/Video
+                </button>
+                {(videoFile || audioFile) && (
+                  <div className="flex items-center gap-2 px-3 py-2 bg-green-50 border border-green-200 rounded-md">
+                    <svg className="w-5 h-5 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span className="text-sm text-green-800">
+                      {videoFile ? `Video: ${videoFile.name}` : `Audio: ${audioFile?.name}`}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setVideoFile(null)
+                        setAudioFile(null)
+                      }}
+                      className="ml-2 text-red-600 hover:text-red-800"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <MediaRecorder
+                onRecordingComplete={(file, type) => {
+                  if (type === 'video') {
+                    setVideoFile(file)
+                  } else {
+                    setAudioFile(file)
+                  }
+                  setShowMediaRecorder(false)
+                  showToast(`${type === 'video' ? 'Video' : 'Audio'} recording saved`, 'success')
+                }}
+                onRecordingCancel={() => setShowMediaRecorder(false)}
+                maxDuration={300}
+                allowedTypes={['audio', 'video']}
+              />
+            )}
+            <small className="text-gray-500 text-xs mt-1 block">Record audio or video evidence directly from your device</small>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">County</label>
-              <input 
-                name="county" 
-                value={county} 
-                onChange={(e) => setCounty(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
-                placeholder="County name"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Video Evidence (optional)</label>
-              <input 
-                name="evidence_video" 
-                type="file" 
-                accept="video/*" 
-                onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-primary file:text-white hover:file:bg-secondary"
-              />
-            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>
@@ -244,7 +484,14 @@ export default function ReportForm() {
                 type="number" 
                 step="0.000001" 
                 value={lat ?? ''} 
-                onChange={(e) => { const v = e.target.value ? Math.round(Number(e.target.value) * 1e6) / 1e6 : undefined; setLat(v) }}
+                onChange={(e) => { 
+                  const v = e.target.value ? Math.round(Number(e.target.value) * 1e6) / 1e6 : undefined
+                  setLat(v)
+                  // Auto reverse geocode when both lat and lon are available
+                  if (v !== undefined && lon !== undefined) {
+                    // The existing useEffect will handle reverse geocoding
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
@@ -256,21 +503,28 @@ export default function ReportForm() {
                 type="number" 
                 step="0.000001" 
                 value={lon ?? ''} 
-                onChange={(e) => { const v = e.target.value ? Math.round(Number(e.target.value) * 1e6) / 1e6 : undefined; setLon(v) }}
+                onChange={(e) => { 
+                  const v = e.target.value ? Math.round(Number(e.target.value) * 1e6) / 1e6 : undefined
+                  setLon(v)
+                  // Auto reverse geocode when both lat and lon are available
+                  if (v !== undefined && lat !== undefined) {
+                    // The existing useEffect will handle reverse geocoding
+                  }
+                }}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
               />
             </div>
-          </div>
+        </div>
           <div className="flex items-center gap-4">
             <button 
               type="button" 
               onClick={() => {
-                if (!('geolocation' in navigator)) { showToast('Geolocation not supported', 'error'); return }
-                navigator.geolocation.getCurrentPosition(
-                  (pos) => { const la = Math.round(pos.coords.latitude * 1e6) / 1e6; const lo = Math.round(pos.coords.longitude * 1e6) / 1e6; setLat(la); setLon(lo); showToast('Location detected', 'success') },
-                  () => showToast('Failed to detect location', 'error'),
-                  { enableHighAccuracy: true, timeout: 8000 }
-                )
+            if (!('geolocation' in navigator)) { showToast('Geolocation not supported', 'error'); return }
+            navigator.geolocation.getCurrentPosition(
+              (pos) => { const la = Math.round(pos.coords.latitude * 1e6) / 1e6; const lo = Math.round(pos.coords.longitude * 1e6) / 1e6; setLat(la); setLon(lo); showToast('Location detected', 'success') },
+              () => showToast('Failed to detect location', 'error'),
+              { enableHighAccuracy: true, timeout: 8000 }
+            )
               }}
               className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors font-medium"
             >
@@ -284,29 +538,32 @@ export default function ReportForm() {
               Clear location
             </button>
             <small className="text-gray-500">or click on the map to set position</small>
-          </div>
+        </div>
           <div className="border border-gray-300 rounded-lg overflow-hidden" style={{ height: 300 }}>
-            <MapContainer center={[lat ?? -1.286389, lon ?? 36.817223]} zoom={lat && lon ? 12 : 7} style={{ height: '100%', width: '100%' }}>
-              <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
-              <ClickMarker lat={lat} lon={lon} onPick={(a, b) => { const ra = Math.round(a * 1e6) / 1e6; const rb = Math.round(b * 1e6) / 1e6; setLat(ra); setLon(rb) }} />
-              {lat != null && lon != null && (
-                <Marker position={[lat, lon]} icon={defaultMarkerIcon}>
-                  <Popup>
-                    <div>
-                      <div><strong>County:</strong> {county || 'Detecting…'}</div>
+          <MapContainer center={[lat ?? -1.286389, lon ?? 36.817223]} zoom={lat && lon ? 12 : 7} style={{ height: '100%', width: '100%' }}>
+              <MapCenterUpdater lat={lat} lon={lon} />
+            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
+            <ClickMarker lat={lat} lon={lon} onPick={(a, b) => { const ra = Math.round(a * 1e6) / 1e6; const rb = Math.round(b * 1e6) / 1e6; setLat(ra); setLon(rb) }} />
+            {lat != null && lon != null && (
+              <Marker position={[lat, lon]} icon={defaultMarkerIcon}>
+                <Popup>
+                  <div>
+                    <div><strong>County:</strong> {county || 'Detecting…'}</div>
                       <div className="text-xs text-gray-600">Lat: {lat.toFixed(6)}, Lon: {lon.toFixed(6)}</div>
-                    </div>
-                  </Popup>
-                </Marker>
-              )}
-            </MapContainer>
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+          </MapContainer>
+        </div>
+        {lat != null && lon != null && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-green-800 text-sm">
+              <strong>Location set:</strong> {locationSearch || 'Selected location'} 
+              {county && ` • County: ${county}`}
+              {` • Coordinates: ${lat.toFixed(6)}, ${lon.toFixed(6)}`}
           </div>
-          {lat != null && lon != null && (
-            <div className="bg-green-50 border border-green-200 rounded-lg p-3 text-green-800">
-              Detected county: {county ? county : 'Detecting…'}
-            </div>
-          )}
-          <input name="honeypot" style={{ display: 'none' }} value={hp} onChange={(e) => setHp(e.target.value)} />
+        )}
+        <input name="honeypot" style={{ display: 'none' }} value={hp} onChange={(e) => setHp(e.target.value)} />
           <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
             <label className="block text-sm font-medium text-gray-700 mb-2">Prove you're human <span className="text-red-500">*</span></label>
             <div className="flex items-center gap-3">
@@ -321,7 +578,7 @@ export default function ReportForm() {
                 placeholder="?"
               />
             </div>
-          </div>
+        </div>
           <button 
             type="submit"
             disabled={status === 'sending'}
@@ -329,7 +586,7 @@ export default function ReportForm() {
           >
             {status === 'sending' ? 'Submitting...' : 'Submit Report'}
           </button>
-        </form>
+      </form>
       </div>
       {status === 'ok' ? (
         <div className="bg-green-50 border border-green-200 rounded-lg p-6">
@@ -351,10 +608,26 @@ export default function ReportForm() {
 }
 
 function ClickMarker({ onPick, lat, lon }: { onPick: (lat: number, lon: number) => void; lat?: number; lon?: number }) {
+  const map = useMap()
   useMapEvents({
     click(e) {
-      onPick(e.latlng.lat, e.latlng.lng)
+      const ra = Math.round(e.latlng.lat * 1e6) / 1e6
+      const rb = Math.round(e.latlng.lng * 1e6) / 1e6
+      onPick(ra, rb)
+      // Center map on clicked location
+      map.setView([ra, rb], Math.max(map.getZoom(), 12))
     }
   })
+  return null
+}
+
+// Update map center when latitude/longitude changes
+function MapCenterUpdater({ lat, lon }: { lat?: number; lon?: number }) {
+  const map = useMap()
+  useEffect(() => {
+    if (lat !== undefined && lon !== undefined) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 12))
+    }
+  }, [lat, lon, map])
   return null
 }

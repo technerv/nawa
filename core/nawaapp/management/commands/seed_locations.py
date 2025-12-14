@@ -1,4 +1,5 @@
 import random
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.core.management.base import BaseCommand
 from django.db import transaction
@@ -58,8 +59,10 @@ class Command(BaseCommand):
 				lng = random.uniform(NAIROBI_BOUNDS['min_lng'], NAIROBI_BOUNDS['max_lng'])
 				coords = (lat, lng)
 
-			report.latitude = coords[0]
-			report.longitude = coords[1]
+			# Normalize to 6 decimal places
+			q = Decimal('0.000001')
+			report.latitude = Decimal(str(coords[0])).quantize(q, rounding=ROUND_HALF_UP)
+			report.longitude = Decimal(str(coords[1])).quantize(q, rounding=ROUND_HALF_UP)
 			report.location_description = report.location_description or "Seeded coordinate"
 			updates.append(report)
 

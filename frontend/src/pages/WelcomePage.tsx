@@ -9,33 +9,33 @@ export default function WelcomePage() {
 					<div className="text-center mb-16">
 						<div className="mb-6">
 							<h1 className="text-6xl md:text-7xl font-extrabold leading-tight mb-4 bg-clip-text text-transparent bg-gradient-to-r from-blue-600 via-purple-600 to-pink-600 animate-pulse">
-								Neighbourhood Alert Watch
-							</h1>
+					Neighbourhood Alert Watch
+				</h1>
 							<div className="w-24 h-1 bg-gradient-to-r from-blue-500 to-purple-500 mx-auto rounded-full"></div>
 						</div>
 						<p className="text-xl md:text-2xl text-gray-700 mb-8 max-w-3xl mx-auto leading-relaxed">
 							Stay informed, stay safe. Real-time crime alerts, neighborhood connections, and emergency assistance at your fingertips.
-						</p>
+				</p>
 						<div className="flex gap-4 flex-wrap justify-center mb-12">
-							<Link
-								to="/public/dashboard"
+					<Link
+						to="/public/dashboard"
 								className="px-8 py-4 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 no-underline"
-							>
+					>
 								📊 Public Dashboard
-							</Link>
-							<Link
-								to="/public/map"
+					</Link>
+					<Link
+						to="/public/map"
 								className="px-8 py-4 bg-gradient-to-r from-purple-600 to-purple-700 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 no-underline"
-							>
+					>
 								🗺️ Public Map
-							</Link>
-							<Link
-								to="/public/report"
+					</Link>
+					<Link
+						to="/public/report"
 								className="px-8 py-4 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-bold text-lg shadow-lg hover:shadow-xl transform hover:-translate-y-1 transition-all duration-200 no-underline"
-							>
+					>
 								🚨 Report Incident
-							</Link>
-						</div>
+					</Link>
+				</div>
 					</div>
 
 					{/* Features Grid */}

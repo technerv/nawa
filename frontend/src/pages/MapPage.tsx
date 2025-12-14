@@ -180,121 +180,11 @@ export default function MapPage() {
 	}
 
 	return (
-		<div style={{ display: 'grid', gap: 12 }}>
-			<h2>Incident Map</h2>
-
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4">
-                <div className="flex flex-wrap gap-3 items-center">
-                    <button 
-                        onClick={() => query.refetch()}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                        </svg>
-                        Refresh
-                    </button>
-                    <button 
-                        onClick={() => setFitKenyaTick((t) => t + 1)}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2"
-                    >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                        </svg>
-                        Zoom to Kenya
-                    </button>
-                    <label className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium cursor-pointer hover:bg-purple-200 transition-colors shadow-sm flex items-center gap-2 border border-purple-300">
-                        <input 
-                            type="checkbox" 
-                            checked={showNeighborhoods} 
-                            onChange={(e) => setShowNeighborhoods(e.target.checked)}
-                            className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
-                        />
-                        Show Neighborhoods
-                    </label>
-                    <label className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium cursor-pointer hover:bg-indigo-200 transition-colors shadow-sm flex items-center gap-2 border border-indigo-300">
-                        <input 
-                            type="checkbox" 
-                            checked={showCounties} 
-                            onChange={(e) => setShowCounties(e.target.checked)}
-                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                        />
-                        Show Counties
-                    </label>
-                    <label className="px-4 py-2 bg-teal-100 text-teal-700 rounded-lg font-medium cursor-pointer hover:bg-teal-200 transition-colors shadow-sm flex items-center gap-2 border border-teal-300">
-                        <input 
-                            type="checkbox" 
-                            checked={showSubCounties} 
-                            onChange={(e) => setShowSubCounties(e.target.checked)}
-                            className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
-                        />
-                        Show Sub-Counties
-                    </label>
-                    <label className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-lg font-medium cursor-pointer hover:bg-cyan-200 transition-colors shadow-sm flex items-center gap-2 border border-cyan-300">
-                        <input 
-                            type="checkbox" 
-                            checked={showConstituencies} 
-                            onChange={(e) => setShowConstituencies(e.target.checked)}
-                            className="w-4 h-4 text-cyan-600 rounded focus:ring-cyan-500"
-                        />
-                        Show Constituencies
-                    </label>
-                    <label className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium cursor-pointer hover:bg-orange-200 transition-colors shadow-sm flex items-center gap-2 border border-orange-300">
-                        <input 
-                            type="checkbox" 
-                            checked={colorByDensity} 
-                            onChange={(e) => setColorByDensity(e.target.checked)}
-                            className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
-                        />
-                        Color Counties by Density
-                    </label>
-                    <select 
-                        value={baseMap} 
-                        onChange={(e) => setBaseMap(e.target.value as any)}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-colors shadow-sm"
-                    >
-                        <option value="standard">Standard</option>
-                        <option value="satellite">Satellite</option>
-                        <option value="terrain">Terrain</option>
-                    </select>
-                    {colorByDensity && (
-                        <select 
-                            value={densityDays} 
-                            onChange={(e) => setDensityDays(Number(e.target.value))}
-                            className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-medium border border-amber-300 hover:bg-amber-200 focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-colors shadow-sm"
-                        >
-                            <option value={7}>Last 7 days</option>
-                            <option value={30}>Last 30 days</option>
-                            <option value={90}>Last 90 days</option>
-                            <option value={365}>Last 365 days</option>
-                        </select>
-                    )}
-                    <select 
-                        value={severity} 
-                        onChange={(e) => setSeverity(e.target.value)}
-                        className="px-4 py-2 bg-red-50 text-red-700 rounded-lg font-medium border border-red-200 hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors shadow-sm"
-                    >
-                        <option value="">All severities</option>
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                        <option value="critical">Critical</option>
-                    </select>
-                    <select 
-                        value={status} 
-                        onChange={(e) => setStatus(e.target.value)}
-                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium border border-slate-300 hover:bg-slate-200 focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-colors shadow-sm"
-                    >
-                        <option value="">All statuses</option>
-                        <option value="submitted">Submitted</option>
-                        <option value="triaged">Triaged</option>
-                        <option value="escalated">Escalated</option>
-                        <option value="in_progress">In Progress</option>
-                        <option value="resolved">Resolved</option>
-                        <option value="closed">Closed</option>
-                    </select>
-                </div>
-            </div>
+		<div className="space-y-6">
+			<div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
+				<h2 className="text-3xl font-bold mb-2">Incident Map</h2>
+				<p className="text-gray-100 text-sm">Interactive map showing crime incidents with severity-based markers</p>
+			</div>
 
 			{query.isLoading && <p>Loading map data…</p>}
             {query.isError && (
@@ -305,10 +195,130 @@ export default function MapPage() {
                 </div>
             )}
 
-			<div style={{ height: '85vh', width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', background: 'rgba(17,24,39,0.6)' }}>
+			<div style={{ height: '85vh', width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', background: 'rgba(17,24,39,0.6)', position: 'relative' }}>
+                {/* Left Side Controls - Map Properties */}
+                <div style={{ position: 'absolute', zIndex: 1000, left: 12, top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <button 
+                        onClick={() => query.refetch()}
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-lg flex items-center gap-2 text-sm"
+                        title="Refresh map data"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                    </button>
+                    <button 
+                        onClick={() => setFitKenyaTick((t) => t + 1)}
+                        className="px-3 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-lg flex items-center gap-2 text-sm"
+                        title="Zoom to Kenya"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                        </svg>
+                        Zoom to Kenya
+                    </button>
+                    <label className="px-3 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium cursor-pointer hover:bg-purple-200 transition-colors shadow-lg flex items-center gap-2 border border-purple-300 text-sm">
+                        <input 
+                            type="checkbox" 
+                            checked={showNeighborhoods} 
+                            onChange={(e) => setShowNeighborhoods(e.target.checked)}
+                            className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                        />
+                        Show Neighborhoods
+                    </label>
+                    <label className="px-3 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium cursor-pointer hover:bg-indigo-200 transition-colors shadow-lg flex items-center gap-2 border border-indigo-300 text-sm">
+                        <input 
+                            type="checkbox" 
+                            checked={showCounties} 
+                            onChange={(e) => setShowCounties(e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        />
+                        Show Counties
+                    </label>
+                    <label className="px-3 py-2 bg-teal-100 text-teal-700 rounded-lg font-medium cursor-pointer hover:bg-teal-200 transition-colors shadow-lg flex items-center gap-2 border border-teal-300 text-sm">
+                        <input 
+                            type="checkbox" 
+                            checked={showSubCounties} 
+                            onChange={(e) => setShowSubCounties(e.target.checked)}
+                            className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                        />
+                        Show Sub-Counties
+                    </label>
+                    <label className="px-3 py-2 bg-cyan-100 text-cyan-700 rounded-lg font-medium cursor-pointer hover:bg-cyan-200 transition-colors shadow-lg flex items-center gap-2 border border-cyan-300 text-sm">
+                        <input 
+                            type="checkbox" 
+                            checked={showConstituencies} 
+                            onChange={(e) => setShowConstituencies(e.target.checked)}
+                            className="w-4 h-4 text-cyan-600 rounded focus:ring-cyan-500"
+                        />
+                        Show Constituencies
+                    </label>
+                    <label className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium cursor-pointer hover:bg-orange-200 transition-colors shadow-lg flex items-center gap-2 border border-orange-300 text-sm">
+                        <input 
+                            type="checkbox" 
+                            checked={colorByDensity} 
+                            onChange={(e) => setColorByDensity(e.target.checked)}
+                            className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                        />
+                        Color by Density
+                    </label>
+                    <select 
+                        value={baseMap} 
+                        onChange={(e) => setBaseMap(e.target.value as any)}
+                        className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-colors shadow-lg text-sm"
+                    >
+                        <option value="standard">Standard</option>
+                        <option value="satellite">Satellite</option>
+                        <option value="terrain">Terrain</option>
+                    </select>
+                    {colorByDensity && (
+                        <select 
+                            value={densityDays} 
+                            onChange={(e) => setDensityDays(Number(e.target.value))}
+                            className="px-3 py-2 bg-amber-100 text-amber-700 rounded-lg font-medium border border-amber-300 hover:bg-amber-200 focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-colors shadow-lg text-sm"
+                        >
+                            <option value={7}>Last 7 days</option>
+                            <option value={30}>Last 30 days</option>
+                            <option value={90}>Last 90 days</option>
+                            <option value={365}>Last 365 days</option>
+                        </select>
+                    )}
+                </div>
+
+                {/* Right Side Controls - Severity and Status Filters */}
+                <div style={{ position: 'absolute', zIndex: 1000, right: 12, top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    <select 
+                        value={severity} 
+                        onChange={(e) => setSeverity(e.target.value)}
+                        className="px-3 py-2 bg-red-50 text-red-700 rounded-lg font-medium border border-red-200 hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors shadow-lg text-sm"
+                        title="Filter by severity"
+                    >
+                        <option value="">All severities</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                    <select 
+                        value={status} 
+                        onChange={(e) => setStatus(e.target.value)}
+                        className="px-3 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium border border-slate-300 hover:bg-slate-200 focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-colors shadow-lg text-sm"
+                        title="Filter by status"
+                    >
+                        <option value="">All statuses</option>
+                        <option value="submitted">Submitted</option>
+                        <option value="triaged">Triaged</option>
+                        <option value="escalated">Escalated</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="closed">Closed</option>
+                    </select>
+                </div>
+
                 <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
                     {showCounties && (
-                        <div style={{ position: 'absolute', zIndex: 1000, left: 12, top: 12, background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', color: '#e5e7eb', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
+                        <div style={{ position: 'absolute', zIndex: 1000, left: 12, bottom: 12, background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', color: '#e5e7eb', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
                             <div style={{ fontSize: 12, letterSpacing: 0.2, textTransform: 'uppercase', opacity: 0.9, marginBottom: 4 }}>County color scale</div>
                             <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
@@ -423,7 +433,7 @@ export default function MapPage() {
                 )}
                 {!!query.data && query.data.length > 0 && (
                     <div style={{ position: 'absolute', zIndex: 1000, right: 12, bottom: 12, background: 'rgba(15,23,42,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', color: '#e5e7eb', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
-                        <div style={{ fontSize: 12, letterSpacing: 0.2, textTransform: 'uppercase', opacity: 0.9, marginBottom: 4 }}>Severity</div>
+                        <div style={{ fontSize: 12, letterSpacing: 0.2, textTransform: 'uppercase', opacity: 0.9, marginBottom: 4 }}>Severity Legend</div>
                         <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
                             <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
                                 <span style={{ width: 16, height: 16, borderRadius: 999, background: '#10b981', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
@@ -493,7 +503,7 @@ export default function MapPage() {
                                     County: {countyName || '—'}
                                     <br />
                                     Location: {formatLocation(point.location_name, countyName, scName, point.latitude, point.longitude)} ({coords})
-                                    <br />
+                                            <br />
                                     {point.location_description && (
                                         <>
                                             Notes: {point.location_description}

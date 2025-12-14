@@ -1,6 +1,6 @@
 import { hasAnyRole, ROLES } from '../lib/roles'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { listCrimeCategories, listCrimeReports, updateCrimeReport } from '../api/crime'
+import { listCrimeCategories, listCrimeReports, updateCrimeReport, getCrimeReport } from '../api/crime'
 import { API_BASE_URL } from '../api/axios'
 import { normalizeCountyName } from '../lib/normalizeCounty'
 import { subscribeAlerts, listSubscriptions, unsubscribeAlert } from '../api/alerts'
@@ -10,14 +10,13 @@ import { resolveMediaUrl } from '../lib/media'
 import { formatDate } from '../lib/dateFormat'
 import { formatLocation } from '../lib/locationFormat'
 import { useSearchParams, Link } from 'react-router-dom'
+import { generateOBPDF, generateCasePackage, downloadPDF, CasePackageData } from '../lib/export'
 
 export default function ReportsPage() {
 	const queryClient = useQueryClient()
 
 	const [search, setSearch] = useState('')
 	const [ordering, setOrdering] = useState('-date_updated')
-	const [ageMin, setAgeMin] = useState<number | undefined>()
-	const [ageMax, setAgeMax] = useState<number | undefined>()
 	const [categoryId, setCategoryId] = useState<number | undefined>()
 	const [page, setPage] = useState(1)
 	const [countyFilter, setCountyFilter] = useState<string>('')
@@ -32,8 +31,13 @@ export default function ReportsPage() {
         return () => clearInterval(timer)
     }, [usedPublic])
 
+	const [selectedReportId, setSelectedReportId] = useState<number | null>(null)
+	const [showReportModal, setShowReportModal] = useState(false)
+
 	useEffect(() => {
 		const county = searchParams.get('county')
+		const reportId = searchParams.get('id')
+		
 		if (county) {
 			setCountyFilter(county)
 			setPage(1)
@@ -41,17 +45,27 @@ export default function ReportsPage() {
 			// Clear filter if no county in URL
 			setCountyFilter('')
 		}
+		
+		// Handle report ID parameter
+		if (reportId) {
+			const id = parseInt(reportId, 10)
+			if (!isNaN(id)) {
+				setSelectedReportId(id)
+				setShowReportModal(true)
+			}
+		} else {
+			setSelectedReportId(null)
+			setShowReportModal(false)
+		}
 	}, [searchParams])
 
 	const reportsQuery = useQuery({
-		queryKey: ['reports', { search, ordering, ageMin, ageMax, categoryId, countyFilter, page }],
+		queryKey: ['reports', { search, ordering, categoryId, countyFilter, page }],
 		queryFn: async () => {
 			try {
 				const data = await listCrimeReports({
 					search: search || undefined,
 					ordering,
-					age__gte: ageMin,
-					age__lte: ageMax,
 					category_of_crime: categoryId,
 					county: countyFilter || undefined,
 					page
@@ -106,13 +120,13 @@ export default function ReportsPage() {
 		<div className="space-y-6">
 			<div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
 				<div className="flex justify-between items-center">
-					<div>
+		<div>
 						<h2 className="text-3xl font-bold mb-2">Crime Reports</h2>
 						<p className="text-gray-100 text-sm">View and manage crime reports. Use filters to find specific incidents.</p>
 					</div>
 					<span className="text-sm px-4 py-2 rounded-full border border-white border-opacity-30 bg-white bg-opacity-10">
-						{usedPublic ? 'Public Data' : 'Private Data'}
-					</span>
+					{usedPublic ? 'Public Data' : 'Private Data'}
+				</span>
 				</div>
 			</div>
 
@@ -153,20 +167,6 @@ export default function ReportsPage() {
 						setSearchParams(newParams)
 					}} 
 					className="px-4 py-2 bg-indigo-50 text-indigo-900 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-indigo-400"
-				/>
-				<input 
-					placeholder="Min age" 
-					type="number" 
-					value={ageMin ?? ''} 
-					onChange={(e) => setAgeMin(e.target.value ? Number(e.target.value) : undefined)}
-					className="px-4 py-2 bg-green-50 text-green-900 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-green-400 w-24"
-				/>
-				<input 
-					placeholder="Max age" 
-					type="number" 
-					value={ageMax ?? ''} 
-					onChange={(e) => setAgeMax(e.target.value ? Number(e.target.value) : undefined)}
-					className="px-4 py-2 bg-teal-50 text-teal-900 border border-teal-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent placeholder-teal-400 w-24"
 				/>
 				<select 
 					value={categoryId ?? ''} 
@@ -228,13 +228,14 @@ export default function ReportsPage() {
 				</>
 			)}
 		</div>
-		<small style={{ color: '#cbd5e1', display: 'block', marginTop: -8, marginBottom: 0 }}>County accepts aliases like "Kajiado" or full "Kajiado County".</small></div>
+			<small className="text-gray-500 text-xs mt-2 block">County accepts aliases like "Kajiado" or full "Kajiado County".</small>
+				</div>
 
 			{reportsQuery.isLoading && <p>Loading...</p>}
 			{reportsQuery.isError && (
 			<div style={{ color: '#fecaca', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
 					<span>Failed to load reports.</span>
-					<button onClick={() => { setSearch(''); setOrdering('-date_updated'); setAgeMin(undefined); setAgeMax(undefined); setCategoryId(undefined); setCountyFilter(''); setPage(1); reportsQuery.refetch() }}>Reset filters</button>
+					<button onClick={() => { setSearch(''); setOrdering('-date_updated'); setCategoryId(undefined); setCountyFilter(''); setPage(1); reportsQuery.refetch() }}>Reset filters</button>
 					<Link to="/public/dashboard" style={{ padding: '6px 10px', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 10, background: 'rgba(255,255,255,0.06)', color: '#e5e7eb', textDecoration: 'none' }}>View Public Dashboard</Link>
 				</div>
 			)}
@@ -271,19 +272,32 @@ export default function ReportsPage() {
 									<th>Age</th>
 									<th>Arrest Date</th>
 									<th>Updated</th>
-									{hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) && <th>Moderate</th>}
+									{hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin, ROLES.Dispatcher]) && <th>Moderate</th>}
 								</tr>
 							</thead>
 							<tbody>
 								{reportsQuery.data.results.length === 0 ? (
 									<tr>
-										<td colSpan={hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) ? 11 : 10} className="text-center py-10 text-gray-500">
+										<td colSpan={hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin, ROLES.Dispatcher]) ? 11 : 10} className="text-center py-10 text-gray-500">
 											No reports found
 										</td>
 									</tr>
 								) : (
 						reportsQuery.data.results.map((r: any) => (
-										<tr key={r.id} className="transition-colors hover:bg-blue-50">
+										<tr 
+											key={r.id} 
+											className={`transition-colors hover:bg-blue-50 ${selectedReportId === r.id ? 'bg-yellow-100 border-l-4 border-yellow-500' : ''}`}
+											onClick={() => {
+												setSelectedReportId(r.id)
+												setShowReportModal(true)
+												setSearchParams(prev => {
+													const newParams = new URLSearchParams(prev)
+													newParams.set('id', String(r.id))
+													return newParams
+												})
+											}}
+											style={{ cursor: 'pointer' }}
+										>
 											<td>
 												{r.upload_criminal_photo ? (
 													<img
@@ -304,9 +318,45 @@ export default function ReportsPage() {
 											<td>{r.age ?? '-'}</td>
 											<td className="text-sm">{r.date_of_arrest ?? '-'}</td>
 											<td className="text-sm text-gray-600">{formatDate(r.date_updated)}</td>
-											{hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) && (
+											{hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin, ROLES.Dispatcher]) && (
 												<td>
+													<div className="flex gap-2 items-center">
 						<RowModeration id={r.id} currentStatus={(r as any).status} currentSeverity={(r as any).severity} onSaved={() => { queryClient.invalidateQueries({ queryKey: ['neighborhood_alert_counts'] }); reportsQuery.refetch() }} />
+														<button
+															onClick={async (e) => {
+																e.stopPropagation()
+																try {
+																	const report = await getCrimeReport(r.id)
+																	const caseData: CasePackageData = {
+																		reportId: String(report.id),
+																		obNumber: report.occurance_book_number,
+																		crimeName: report.name_of_crime,
+																		description: report.description || undefined,
+																		location: formatLocation(report.location_name, report.county, undefined, report.latitude || undefined, report.longitude || undefined),
+																		county: report.county || undefined,
+																		dateCreated: report.date_created,
+																		dateUpdated: report.date_updated,
+																		status: (r as any).status || 'submitted',
+																		severity: (r as any).severity || 'medium',
+																		category: report.category_of_crime_name,
+																		assignedTo: (r as any).assigned_to?.username || undefined,
+																		evidence: {
+																			photos: report.upload_criminal_photo ? [resolveMediaUrl(report.upload_criminal_photo) as string] : undefined,
+																		},
+																	}
+																	await generateCasePackage(caseData)
+																	showToast('Case package downloaded', 'success')
+																} catch (err: any) {
+																	console.error('Export failed:', err)
+																	showToast('Failed to export case package', 'error')
+																}
+															}}
+															className="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 transition-colors"
+															title="Export Case Package"
+														>
+															📦 Export
+														</button>
+													</div>
 												</td>
 											)}
 										</tr>
@@ -327,6 +377,197 @@ export default function ReportsPage() {
 					</div>
 				</>
 			)}
+
+			{/* Report Detail Modal */}
+			{showReportModal && selectedReportId && (
+				<ReportDetailModal
+					reportId={selectedReportId}
+					onClose={() => {
+						setShowReportModal(false)
+						setSelectedReportId(null)
+						setSearchParams(prev => {
+							const newParams = new URLSearchParams(prev)
+							newParams.delete('id')
+							return newParams
+						})
+					}}
+				/>
+			)}
+		</div>
+	)
+}
+
+// Report Detail Modal Component
+function ReportDetailModal({ reportId, onClose }: { reportId: number; onClose: () => void }) {
+	const { data: report, isLoading } = useQuery({
+		queryKey: ['report_detail', reportId],
+		queryFn: () => getCrimeReport(reportId),
+	})
+
+	if (isLoading) {
+		return (
+			<div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+				<div className="bg-white rounded-lg p-8">
+					<div className="text-center">Loading report details...</div>
+				</div>
+			</div>
+		)
+	}
+
+	if (!report) {
+		return (
+			<div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+				<div className="bg-white rounded-lg p-8">
+					<div className="text-center text-red-600 mb-4">Report not found</div>
+					<button
+						onClick={onClose}
+						className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700"
+					>
+						Close
+					</button>
+				</div>
+			</div>
+		)
+	}
+
+	return (
+		<div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+			<div className="bg-white rounded-lg shadow-xl max-w-4xl w-full max-h-[90vh] overflow-y-auto">
+				<div className="sticky top-0 bg-white border-b p-4 flex justify-between items-center">
+					<h3 className="text-2xl font-bold text-gray-800">Report Details - {report.occurance_book_number}</h3>
+					<button
+						onClick={onClose}
+						className="text-gray-500 hover:text-gray-700 text-2xl"
+					>
+						✕
+					</button>
+				</div>
+				<div className="p-6 space-y-6">
+					{/* Header Info */}
+					<div className="grid grid-cols-2 gap-4">
+						<div>
+							<label className="text-sm font-medium text-gray-500">OB Number</label>
+							<div className="text-lg font-mono font-bold">{report.occurance_book_number || 'N/A'}</div>
+						</div>
+						<div>
+							<label className="text-sm font-medium text-gray-500">Report ID</label>
+							<div className="text-lg font-bold">{report.id}</div>
+						</div>
+					</div>
+
+					{/* Crime Details */}
+					<div>
+						<h4 className="font-semibold text-gray-700 mb-2">Crime Information</h4>
+						<div className="bg-gray-50 rounded-lg p-4 space-y-2">
+							<div><strong>Crime Name:</strong> {report.name_of_crime || 'N/A'}</div>
+							<div><strong>Category:</strong> {report.category_of_crime_name || 'N/A'}</div>
+							{report.description && (
+								<div>
+									<strong>Description:</strong>
+									<p className="mt-1 text-gray-700">{report.description}</p>
+								</div>
+							)}
+						</div>
+					</div>
+
+					{/* Location Details */}
+					<div>
+						<h4 className="font-semibold text-gray-700 mb-2">Location</h4>
+						<div className="bg-gray-50 rounded-lg p-4 space-y-2">
+							<div><strong>Location:</strong> {formatLocation(report.location_name, report.county, undefined, report.latitude, report.longitude) || 'N/A'}</div>
+							{report.location_description && (
+								<div><strong>Description:</strong> {report.location_description}</div>
+							)}
+							{report.latitude && report.longitude && (
+								<div className="text-sm text-gray-600">
+									<strong>Coordinates:</strong> {report.latitude}, {report.longitude}
+								</div>
+							)}
+						</div>
+					</div>
+
+					{/* Criminal Details */}
+					{(report.name_of_criminal || report.age || report.criminal_id_number) && (
+						<div>
+							<h4 className="font-semibold text-gray-700 mb-2">Suspect Information</h4>
+							<div className="bg-gray-50 rounded-lg p-4 space-y-2">
+								{report.name_of_criminal && (
+									<div><strong>Name:</strong> {report.name_of_criminal}</div>
+								)}
+								{report.age && (
+									<div><strong>Age:</strong> {report.age}</div>
+								)}
+								{report.criminal_id_number && (
+									<div><strong>ID Number:</strong> {report.criminal_id_number}</div>
+								)}
+								{report.upload_criminal_photo && (
+									<div>
+										<strong>Photo:</strong>
+										<img
+											src={resolveMediaUrl(report.upload_criminal_photo) as string}
+											alt="Suspect"
+											className="mt-2 w-32 h-32 object-cover rounded border"
+										/>
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
+					{/* Dates */}
+					<div>
+						<h4 className="font-semibold text-gray-700 mb-2">Timeline</h4>
+						<div className="bg-gray-50 rounded-lg p-4 space-y-2">
+							<div><strong>Created:</strong> {formatDate(report.date_created) || 'N/A'}</div>
+							<div><strong>Updated:</strong> {formatDate(report.date_updated) || 'N/A'}</div>
+							{report.date_of_arrest && (
+								<div><strong>Date of Arrest:</strong> {report.date_of_arrest}</div>
+							)}
+						</div>
+					</div>
+
+					{/* Actions */}
+					<div className="flex gap-2 pt-4 border-t">
+						<button
+							onClick={async () => {
+								try {
+									const caseData: CasePackageData = {
+										reportId: String(report.id),
+										obNumber: report.occurance_book_number,
+										crimeName: report.name_of_crime,
+										description: report.description || undefined,
+										location: formatLocation(report.location_name, report.county, undefined, report.latitude || undefined, report.longitude || undefined),
+										county: report.county || undefined,
+										dateCreated: report.date_created,
+										dateUpdated: report.date_updated,
+										status: (report as any).status || 'submitted',
+										severity: (report as any).severity || 'medium',
+										category: report.category_of_crime_name,
+										assignedTo: (report as any).assigned_to?.username || undefined,
+										evidence: {
+											photos: report.upload_criminal_photo ? [resolveMediaUrl(report.upload_criminal_photo) as string] : undefined,
+										},
+									}
+									await generateCasePackage(caseData)
+									showToast('Case package downloaded', 'success')
+								} catch (err: any) {
+									console.error('Export failed:', err)
+									showToast('Failed to export case package', 'error')
+								}
+							}}
+							className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition-colors"
+						>
+							📦 Export Case Package
+						</button>
+						<button
+							onClick={onClose}
+							className="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700 transition-colors"
+						>
+							Close
+						</button>
+					</div>
+				</div>
+			</div>
 		</div>
 	)
 }
@@ -364,7 +605,7 @@ function RowModeration({ id, currentStatus, currentSeverity, onSaved }: { id: nu
 	}
 
 	return (
-		<div className="flex flex-col gap-2 min-w-[200px]">
+		<div className="flex flex-col gap-2 min-w-[200px]" onClick={(e) => e.stopPropagation()}>
 			<div className="flex gap-2">
 				<div className="flex-1">
 					<label className="block text-xs font-medium text-gray-600 mb-1">Status</label>

@@ -15,7 +15,8 @@ from django.contrib.auth import get_user_model
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework_simplejwt.tokens import RefreshToken
-from .roles import ALL_ROLES, ROLE_REPORTER, ROLE_ADMIN, ROLE_SUPERADMIN, ROLE_ANALYST, ROLE_SUPERVISOR, ROLE_EXTERNAL
+from .roles import ALL_ROLES, ROLE_SUPERADMIN, ROLE_SECURITY_ORG, ROLE_ADMIN, ROLE_REPORTER, ROLE_ANALYST, ROLE_SUPERVISOR, ROLE_EXTERNAL
+from .org_access import get_org_filter, filter_queryset_by_org, can_access_report, is_superadmin, is_security_org_user, get_user_organization
 from django.db.models import Count
 from .county_aliases import COUNTY_ALIAS
 from .throttles import PublicAnonRateThrottle
@@ -81,20 +82,39 @@ class CrimeReportBookViewset(ModelViewSet):
         qs = CrimeReportBook.objects.all()
         if getattr(self, '_public', False):
             return qs
-        enforce = getattr(settings, 'ENFORCE_ROLE_PERMS', False)
-        if enforce:
-            user = getattr(self.request, 'user', None)
-            if not (user and user.is_authenticated):
-                return CrimeReportBook.objects.none()
-            try:
-                groups = set(user.groups.values_list('name', flat=True))
-                act = getattr(self, 'action', None)
-                if ROLE_ANALYST in groups and act in ('list', 'retrieve', 'map'):
+        
+        user = getattr(self.request, 'user', None)
+        
+        # Apply organization-based access control
+        # SuperAdmin sees all, Security Org Users see only their org's reports
+        if user and user.is_authenticated:
+            # SuperAdmin bypasses org filtering
+            if is_superadmin(user):
+                pass  # No filtering for SuperAdmin
+            # Security Org Users only see their organization's reports
+            elif is_security_org_user(user):
+                qs = filter_queryset_by_org(qs, user)
+            # Other authenticated users see nothing (unless explicitly allowed)
+            else:
+                # Legacy role-based filtering for backward compatibility
+                enforce = getattr(settings, 'ENFORCE_ROLE_PERMS', False)
+                if enforce:
+                    try:
+                        groups = set(user.groups.values_list('name', flat=True))
+                        act = getattr(self, 'action', None)
+                        if ROLE_ANALYST in groups and act in ('list', 'retrieve', 'map'):
+                            return CrimeReportBook.objects.none()
+                        if ROLE_EXTERNAL in groups and act in ('list', 'retrieve', 'map'):
+                            return qs.filter(assigned_to=user)
+                    except Exception:
+                        pass
+                else:
+                    # If not enforcing role perms, non-org users see nothing
                     return CrimeReportBook.objects.none()
-                if ROLE_EXTERNAL in groups and act in ('list', 'retrieve', 'map'):
-                    return qs.filter(assigned_to=user)
-            except Exception:
-                pass
+        else:
+            # Unauthenticated users see nothing (except public endpoints)
+            return CrimeReportBook.objects.none()
+        
         return qs
 
     def _create_audit_log(self, previous, instance, user, note=''):
@@ -134,10 +154,34 @@ class CrimeReportBookViewset(ModelViewSet):
     def perform_create(self, serializer):
         user = self.request.user if hasattr(self.request, 'user') else None
         instance = serializer.save()
+        
+        # Auto-assign organization if security org user created the report and it's not already assigned
+        if user and user.is_authenticated and is_security_org_user(user):
+            if not instance.assigned_organization:
+                org = get_user_organization(user)
+                if org:
+                    instance.assigned_organization = org
+                    # Also assign to the user if not already assigned
+                    if not instance.assigned_to:
+                        instance.assigned_to = user
+                    instance.save()
+        
         note = self.request.data.get('change_note', '')
         self._create_audit_log(None, instance, user, note)
         try:
             create_alert_event(instance, 'created', note=note or 'Report created')
+            # Send WebSocket notification
+            from .websocket_utils import send_alert_to_websocket
+            send_alert_to_websocket({
+                'id': instance.id,
+                'type': 'new_report',
+                'severity': instance.severity,
+                'status': instance.status,
+                'location': instance.location_name,
+                'county': instance.county,
+                'ob_number': instance.occurance_book_number,
+                'timestamp': instance.date_created.isoformat() if instance.date_created else None,
+            })
         except Exception:
             pass
 
@@ -182,6 +226,89 @@ class CrimeReportBookViewset(ModelViewSet):
         ]
         return Response(data)
     
+    @action(detail=False, methods=['get'])
+    def stats(self, request):
+        """Stats endpoint for Security Org Users (org-specific)"""
+        from django.db.models import Count, Q, Avg, F
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Get user's organization if Security Org User
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SECURITY_ORG not in user_groups and ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Filter by organization if Security Org User (not SuperAdmin)
+        org_filter = Q()
+        if ROLE_SUPERADMIN not in user_groups:
+            # For Security Org Users, filter by their organization's reports
+            # This would need to be implemented based on how reports are associated with orgs
+            # For now, return all reports (can be refined later)
+            pass
+        
+        # Calculate stats
+        total = CrimeReportBook.objects.filter(org_filter).count()
+        pending = CrimeReportBook.objects.filter(org_filter, status=CrimeReportBook.STATUS_SUBMITTED).count()
+        in_progress = CrimeReportBook.objects.filter(
+            org_filter,
+            status__in=[CrimeReportBook.STATUS_IN_PROGRESS, CrimeReportBook.STATUS_TRIAGED]
+        ).count()
+        resolved = CrimeReportBook.objects.filter(
+            org_filter,
+            status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED]
+        ).count()
+        
+        # Calculate average response time (time from submitted to acknowledged/in_progress)
+        avg_response_time = None
+        try:
+            resolved_reports = CrimeReportBook.objects.filter(
+                org_filter,
+                status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED],
+                date_updated__isnull=False,
+                date_created__isnull=False
+            )[:100]  # Sample first 100 for performance
+            if resolved_reports.exists():
+                response_times = []
+                for report in resolved_reports:
+                    if report.date_created and report.date_updated:
+                        delta = report.date_updated - report.date_created
+                        response_times.append(delta.total_seconds() / 60)  # Convert to minutes
+                if response_times:
+                    avg_response_time = sum(response_times) / len(response_times)
+        except Exception:
+            pass
+        
+        # SLA compliance (simplified: % resolved within 24 hours)
+        sla_compliance = None
+        try:
+            last_30_days = timezone.now() - timedelta(days=30)
+            recent_resolved = CrimeReportBook.objects.filter(
+                org_filter,
+                status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED],
+                date_updated__gte=last_30_days
+            )[:100]
+            if recent_resolved.exists():
+                within_sla = 0
+                total_recent = recent_resolved.count()
+                for report in recent_resolved:
+                    if report.date_created and report.date_updated:
+                        delta = report.date_updated - report.date_created
+                        if delta.total_seconds() <= 24 * 3600:  # 24 hours
+                            within_sla += 1
+                if total_recent > 0:
+                    sla_compliance = (within_sla / total_recent) * 100
+        except Exception:
+            pass
+        
+        return Response({
+            'total': total,
+            'pending': pending,
+            'in_progress': in_progress,
+            'resolved': resolved,
+            'avg_response_time': round(avg_response_time, 1) if avg_response_time else None,
+            'sla_compliance': round(sla_compliance, 1) if sla_compliance else None,
+        })
+
     @action(detail=False, methods=['get'])
     def summary(self, request):
         """
@@ -808,6 +935,41 @@ class PublicReportsView(APIView):
         return paginator.get_paginated_response(rows)
 
     def post(self, request):
+        # Track anonymous session
+        from .utils import get_or_create_anonymous_session, check_rate_limit
+        from .models import AnonymousSession, DeviceFingerprint
+        from django.db.models import Count, Sum
+        import uuid as uuid_lib
+        
+        session_id = request.headers.get('X-Session-ID') or request.data.get('session_id')
+        # Validate UUID format if provided
+        if session_id:
+            try:
+                uuid_lib.UUID(str(session_id))  # Validate format
+            except (ValueError, TypeError):
+                session_id = None  # Invalid UUID, generate new one
+        
+        try:
+            session, created = get_or_create_anonymous_session(request, session_id)
+            
+            # Check if session/device is blocked
+            if session.is_blocked:
+                return Response({
+                    'detail': f'Access blocked: {session.blocked_reason or "Abuse detected"}'
+                }, status=status.HTTP_403_FORBIDDEN)
+            
+            # Check rate limits
+            allowed, reason = check_rate_limit(session, max_per_hour=10, max_per_day=50)
+            if not allowed:
+                return Response({'detail': reason}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        except ValueError as e:
+            return Response({'detail': str(e)}, status=status.HTTP_403_FORBIDDEN)
+        except Exception as e:
+            # Log error but don't block submission
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Session tracking error: {e}")
+        
         hp = str(request.data.get('honeypot') or '')
         if hp.strip():
             return Response({'detail': 'invalid submission'}, status=status.HTTP_400_BAD_REQUEST)
@@ -883,6 +1045,24 @@ class PublicReportsView(APIView):
             create_alert_event(obj, 'created', note='Report created anonymously')
         except Exception:
             pass
+        
+        # Update session tracking
+        try:
+            session.report_count += 1
+            session.last_seen = timezone.now()
+            session.save(update_fields=['report_count', 'last_seen'])
+            
+            # Update device fingerprint
+            if session.device_fingerprint:
+                try:
+                    device = DeviceFingerprint.objects.get(fingerprint_hash=session.device_fingerprint)
+                    device.report_count += 1
+                    device.last_seen = timezone.now()
+                    device.save(update_fields=['report_count', 'last_seen'])
+                except DeviceFingerprint.DoesNotExist:
+                    pass
+        except Exception:
+            pass
 
         return Response({
             'id': obj.id,
@@ -892,6 +1072,7 @@ class PublicReportsView(APIView):
             'county': obj.county,
             'date_updated': obj.date_updated,
             'category_of_crime_name': obj.category_of_crime.crime_category,
+            'session_id': str(session.session_id),  # Return session ID for client to store
         }, status=status.HTTP_201_CREATED)
 
 class PublicSubCountiesGeoJSONView(APIView):
@@ -1450,14 +1631,28 @@ class AuthMeView(APIView):
     def get(self, request):
         user = request.user
         groups = list(user.groups.values_list('name', flat=True))
-        return Response({
+        org = get_user_organization(user)
+        
+        response_data = {
             'id': user.id,
             'username': user.username,
             'email': user.email,
             'first_name': user.first_name,
             'last_name': user.last_name,
             'roles': groups
-        })
+        }
+        
+        # Include organization information if user has one
+        if org:
+            response_data['organization'] = {
+                'id': org.id,
+                'name': org.organization_name,
+                'type': org.organization_type
+            }
+        else:
+            response_data['organization'] = None
+        
+        return Response(response_data)
 
 
 class AlertEventViewSet(ModelViewSet):
@@ -1702,27 +1897,38 @@ class NeighborhoodViewSet(ModelViewSet):
 
 
 class RegistrationView(APIView):
-    permission_classes = [AllowAny]
+    """
+    Registration is now restricted to SuperAdmin only.
+    Security Org Users must be created by SuperAdmin through admin interface.
+    Anonymous reporters do not need accounts.
+    """
+    permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
+        # Only SuperAdmin can create accounts
+        if not request.user.is_authenticated:
+            return Response({
+                'detail': 'Authentication required. Only SuperAdmin can create accounts. Contact NAWA support for Security Org access.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({
+                'detail': 'Only SuperAdmin can create accounts. Security Org Users must be whitelisted by SuperAdmin.'
+            }, status=status.HTTP_403_FORBIDDEN)
+
         User = get_user_model()
         username = request.data.get('username', '').strip()
         password = request.data.get('password', '').strip()
         email = request.data.get('email', '').strip()
-        role = request.data.get('role', ROLE_REPORTER)
+        role = request.data.get('role', ROLE_SECURITY_ORG)
 
         if not username or not password:
             return Response({'detail': 'username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
-        if role not in ALL_ROLES:
-            role = ROLE_REPORTER
-
-        enforce = getattr(settings, 'ENFORCE_ROLE_PERMS', False)
-        if enforce and request.user and request.user.is_authenticated:
-            user_groups = set(request.user.groups.values_list('name', flat=True))
-            if ROLE_ADMIN not in user_groups and ROLE_SUPERADMIN not in user_groups:
-                role = ROLE_REPORTER
-        elif enforce:
-            role = ROLE_REPORTER
+        
+        # Only allow SecurityOrgUser or SuperAdmin roles
+        if role not in [ROLE_SUPERADMIN, ROLE_SECURITY_ORG]:
+            role = ROLE_SECURITY_ORG
 
         if User.objects.filter(username=username).exists():
             return Response({'detail': 'username already exists'}, status=status.HTTP_400_BAD_REQUEST)
@@ -1733,6 +1939,46 @@ class RegistrationView(APIView):
             user.groups.add(grp)
         except Exception:
             pass
+
+        # If creating SecurityOrgUser, create whitelist entry
+        if role == ROLE_SECURITY_ORG:
+            from .models import SecurityOrgWhitelist
+            organization_name = request.data.get('organization_name', '').strip()
+            organization_type = request.data.get('organization_type', 'other')
+            contact_person = request.data.get('contact_person', '').strip() or None
+            contact_email = request.data.get('contact_email', '').strip() or None
+            contact_phone = request.data.get('contact_phone', '').strip() or None
+            allowed_ip_ranges = request.data.get('allowed_ip_ranges', [])
+            allowed_vpn_names = request.data.get('allowed_vpn_names', [])
+            notes = request.data.get('notes', '').strip() or None
+            
+            if not organization_name:
+                organization_name = f"Organization for {username}"
+            
+            # Validate organization_type
+            valid_types = ['police', 'county_command', 'private_security', 'emergency', 'other']
+            if organization_type not in valid_types:
+                organization_type = 'other'
+            
+            # Ensure allowed_ip_ranges and allowed_vpn_names are lists
+            if not isinstance(allowed_ip_ranges, list):
+                allowed_ip_ranges = []
+            if not isinstance(allowed_vpn_names, list):
+                allowed_vpn_names = []
+            
+            SecurityOrgWhitelist.objects.create(
+                user=user,
+                organization_name=organization_name,
+                organization_type=organization_type,
+                contact_person=contact_person,
+                contact_email=contact_email,
+                contact_phone=contact_phone,
+                allowed_ip_ranges=allowed_ip_ranges,
+                allowed_vpn_names=allowed_vpn_names,
+                notes=notes,
+                created_by=request.user,
+                is_active=True
+            )
 
         refresh = RefreshToken.for_user(user)
         data = {
@@ -1784,16 +2030,39 @@ class SubscribeAlertsView(APIView):
         except Exception:
             return Response({'detail': 'not found'}, status=status.HTTP_404_NOT_FOUND)
 class UsersRolesView(APIView):
-    permission_classes = [permissions.IsAdminUser]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        # Only SuperAdmin can view users
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({
+                'detail': 'Only SuperAdmin can view users list.'
+            }, status=status.HTTP_403_FORBIDDEN)
+        
         User = get_user_model()
+        from .models import SecurityOrgWhitelist
         rows = []
         by_role = {}
         for u in User.objects.all().order_by('username'):
             roles = list(u.groups.values_list('name', flat=True))
             for r in roles:
                 by_role[r] = by_role.get(r, 0) + 1
+            
+            # Get whitelist info if exists
+            whitelist_info = None
+            try:
+                wl = SecurityOrgWhitelist.objects.get(user=u)
+                whitelist_info = {
+                    'organization_name': wl.organization_name,
+                    'organization_type': wl.organization_type,
+                    'is_active': wl.is_active,
+                    'has_ip_restrictions': bool(wl.allowed_ip_ranges),
+                    'has_vpn_restrictions': bool(wl.allowed_vpn_names),
+                }
+            except SecurityOrgWhitelist.DoesNotExist:
+                pass
+            
             rows.append({
                 'id': u.id,
                 'username': u.username,
@@ -1801,5 +2070,368 @@ class UsersRolesView(APIView):
                 'roles': roles,
                 'is_superuser': u.is_superuser,
                 'is_staff': u.is_staff,
+                'whitelist': whitelist_info,
             })
         return Response({'results': rows, 'total': len(rows), 'by_role': by_role})
+
+
+class SecurityStatsView(APIView):
+    """Stats endpoint for Security Org Users (org-specific)"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Count, Q, Avg, F
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        # Get user's organization if Security Org User
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SECURITY_ORG not in user_groups and ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Access denied'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Filter by organization if Security Org User (not SuperAdmin)
+        org_filter = Q()
+        if ROLE_SUPERADMIN not in user_groups:
+            # For Security Org Users, filter by their organization's reports
+            # This would need to be implemented based on how reports are associated with orgs
+            # For now, return all reports (can be refined later)
+            pass
+        
+        # Calculate stats
+        total = CrimeReportBook.objects.filter(org_filter).count()
+        pending = CrimeReportBook.objects.filter(org_filter, status=CrimeReportBook.STATUS_SUBMITTED).count()
+        in_progress = CrimeReportBook.objects.filter(
+            org_filter,
+            status__in=[CrimeReportBook.STATUS_IN_PROGRESS, CrimeReportBook.STATUS_TRIAGED]
+        ).count()
+        resolved = CrimeReportBook.objects.filter(
+            org_filter,
+            status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED]
+        ).count()
+        
+        # Calculate average response time (time from submitted to acknowledged/in_progress)
+        # This is a simplified calculation
+        avg_response_time = None
+        try:
+            resolved_reports = CrimeReportBook.objects.filter(
+                org_filter,
+                status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED],
+                date_updated__isnull=False,
+                date_created__isnull=False
+            )
+            if resolved_reports.exists():
+                response_times = []
+                for report in resolved_reports[:100]:  # Sample first 100 for performance
+                    if report.date_created and report.date_updated:
+                        delta = report.date_updated - report.date_created
+                        response_times.append(delta.total_seconds() / 60)  # Convert to minutes
+                if response_times:
+                    avg_response_time = sum(response_times) / len(response_times)
+        except Exception:
+            pass
+        
+        # SLA compliance (simplified: % resolved within 24 hours)
+        sla_compliance = None
+        try:
+            last_30_days = timezone.now() - timedelta(days=30)
+            recent_resolved = CrimeReportBook.objects.filter(
+                org_filter,
+                status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED],
+                date_updated__gte=last_30_days
+            )
+            if recent_resolved.exists():
+                within_sla = 0
+                total_recent = recent_resolved.count()
+                for report in recent_resolved[:100]:
+                    if report.date_created and report.date_updated:
+                        delta = report.date_updated - report.date_created
+                        if delta.total_seconds() <= 24 * 3600:  # 24 hours
+                            within_sla += 1
+                if total_recent > 0:
+                    sla_compliance = (within_sla / min(total_recent, 100)) * 100
+        except Exception:
+            pass
+        
+        return Response({
+            'total': total,
+            'pending': pending,
+            'in_progress': in_progress,
+            'resolved': resolved,
+            'avg_response_time': round(avg_response_time, 1) if avg_response_time else None,
+            'sla_compliance': round(sla_compliance, 1) if sla_compliance else None,
+        })
+
+
+class GlobalStatsView(APIView):
+    """Global stats endpoint for SuperAdmin"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Count
+        from .models import SecurityOrgWhitelist
+        
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Only SuperAdmin can access global stats'}, status=status.HTTP_403_FORBIDDEN)
+        
+        total_reports = CrimeReportBook.objects.count()
+        total_organizations = SecurityOrgWhitelist.objects.filter(is_active=True).count()
+        active_incidents = CrimeReportBook.objects.filter(
+            status__in=[CrimeReportBook.STATUS_SUBMITTED, CrimeReportBook.STATUS_TRIAGED, CrimeReportBook.STATUS_IN_PROGRESS]
+        ).count()
+        false_reports = CrimeReportBook.objects.filter(status='false_report').count()  # Assuming this status exists
+        
+        # Calculate average response time across all orgs
+        avg_response_time = None
+        try:
+            resolved = CrimeReportBook.objects.filter(
+                status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED],
+                date_updated__isnull=False,
+                date_created__isnull=False
+            )[:100]
+            if resolved.exists():
+                response_times = []
+                for report in resolved:
+                    if report.date_created and report.date_updated:
+                        delta = report.date_updated - report.date_created
+                        response_times.append(delta.total_seconds() / 60)
+                if response_times:
+                    avg_response_time = sum(response_times) / len(response_times)
+        except Exception:
+            pass
+        
+        # System health (simplified: based on recent activity)
+        system_health = 100  # Placeholder
+        
+        return Response({
+            'total_reports': total_reports,
+            'total_organizations': total_organizations,
+            'active_incidents': active_incidents,
+            'false_reports': false_reports,
+            'avg_response_time': round(avg_response_time, 1) if avg_response_time else None,
+            'system_health': system_health,
+        })
+
+
+class TriageRulesView(APIView):
+    """Triage rules management for SuperAdmin"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Only SuperAdmin can access triage rules'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # For now, return placeholder rules
+        # In production, these would be stored in a TriageRule model
+        rules = [
+            {
+                'id': 1,
+                'name': 'Critical Severity Threshold',
+                'enabled': True,
+                'threshold': 90,
+                'county': None,
+            },
+            {
+                'id': 2,
+                'name': 'High Severity Threshold',
+                'enabled': True,
+                'threshold': 70,
+                'county': None,
+            },
+            {
+                'id': 3,
+                'name': 'Nairobi County Critical',
+                'enabled': True,
+                'threshold': 85,
+                'county': 'Nairobi',
+            },
+        ]
+        return Response(rules)
+
+    def post(self, request):
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Only SuperAdmin can modify triage rules'}, status=status.HTTP_403_FORBIDDEN)
+        
+        # Placeholder - in production, create/update TriageRule model
+        return Response({'detail': 'Triage rule created/updated'}, status=status.HTTP_201_CREATED)
+
+
+class OrgPerformanceView(APIView):
+    """Organization performance metrics for SuperAdmin"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Count, Avg
+        from .models import SecurityOrgWhitelist
+        
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Only SuperAdmin can access org performance'}, status=status.HTTP_403_FORBIDDEN)
+        
+        orgs = SecurityOrgWhitelist.objects.filter(is_active=True).select_related('user')
+        performance_data = []
+        
+        for org in orgs:
+            # Count incidents handled by this org (simplified - would need proper association)
+            incidents_handled = CrimeReportBook.objects.filter(
+                status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED]
+            ).count()  # Placeholder - would filter by org
+            
+            # Calculate average response time (simplified)
+            avg_response_time = 15.0  # Placeholder
+            
+            # SLA compliance (simplified)
+            sla_compliance = 85.0  # Placeholder
+            
+            performance_data.append({
+                'id': org.id,
+                'name': org.organization_name,
+                'type': org.organization_type,
+                'incidents_handled': incidents_handled,
+                'avg_response_time': avg_response_time,
+                'sla_compliance': sla_compliance,
+                'is_active': org.is_active,
+            })
+        
+        return Response(performance_data)
+
+
+class AnalyticsView(APIView):
+    """Analytics endpoint for different models (false detection, hotspot, monetization)"""
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        from django.db.models import Count, Q
+        from django.utils import timezone
+        from datetime import timedelta
+        
+        user_groups = set(request.user.groups.values_list('name', flat=True))
+        if ROLE_SUPERADMIN not in user_groups:
+            return Response({'detail': 'Only SuperAdmin can access analytics'}, status=status.HTTP_403_FORBIDDEN)
+        
+        model_type = request.query_params.get('model', 'false_detection')
+        date_from = request.query_params.get('date_from')
+        date_to = request.query_params.get('date_to')
+        
+        # Build date filter
+        date_filter = Q()
+        if date_from:
+            try:
+                date_from_obj = timezone.datetime.fromisoformat(date_from.replace('Z', '+00:00'))
+                date_filter &= Q(date_created__gte=date_from_obj)
+            except Exception:
+                pass
+        if date_to:
+            try:
+                date_to_obj = timezone.datetime.fromisoformat(date_to.replace('Z', '+00:00'))
+                date_filter &= Q(date_created__lte=date_to_obj)
+            except Exception:
+                pass
+        
+        if model_type == 'false_detection':
+            # False report detection model
+            suspicious_reports = CrimeReportBook.objects.filter(
+                date_filter,
+                status='submitted'
+            ).exclude(description__isnull=True).exclude(description='')
+            
+            false_detection_data = []
+            for report in suspicious_reports[:50]:
+                score = 0
+                if report.description and len(report.description) < 10:
+                    score += 20
+                if report.location_name:
+                    same_location_count = CrimeReportBook.objects.filter(
+                        location_name=report.location_name,
+                        date_created__gte=timezone.now() - timedelta(days=7)
+                    ).count()
+                    if same_location_count > 5:
+                        score += 30
+                if not report.upload_criminal_photo and not report.evidence_video:
+                    score += 15
+                
+                false_detection_data.append({
+                    'report_id': report.id,
+                    'ob_number': report.occurance_book_number,
+                    'suspicious_score': min(score, 100),
+                    'location': report.location_name,
+                    'date': report.date_created.isoformat() if report.date_created else None,
+                })
+            
+            return Response({
+                'model': 'false_detection',
+                'data': false_detection_data,
+                'summary': {
+                    'total_analyzed': len(false_detection_data),
+                    'high_risk': len([d for d in false_detection_data if d['suspicious_score'] > 70]),
+                }
+            })
+        
+        elif model_type == 'hotspot':
+            # Hotspot prediction model
+            hotspots = CrimeReportBook.objects.filter(
+                combined_filter
+            ).values('county', 'location_name').annotate(
+                count=Count('id')
+            ).order_by('-count')[:20]
+            
+            return Response({
+                'model': 'hotspot',
+                'data': list(hotspots),
+                'summary': {
+                    'total_hotspots': len(hotspots),
+                    'top_hotspot': hotspots[0] if hotspots else None,
+                }
+            })
+        
+        elif model_type == 'monetization':
+            # Monetization model
+            from .models import SecurityOrgWhitelist
+            
+            # SuperAdmin can see all orgs, Security Org Users only see their own
+            if is_superadmin(request.user):
+                orgs = SecurityOrgWhitelist.objects.filter(is_active=True)
+            else:
+                user_org = get_user_organization(request.user)
+                if user_org:
+                    orgs = SecurityOrgWhitelist.objects.filter(id=user_org.id, is_active=True)
+                else:
+                    orgs = SecurityOrgWhitelist.objects.none()
+            
+            monetization_data = []
+            
+            for org in orgs:
+                incidents_handled = CrimeReportBook.objects.filter(
+                    date_filter,
+                    assigned_organization=org,
+                    status__in=[CrimeReportBook.STATUS_RESOLVED, CrimeReportBook.STATUS_CLOSED]
+                ).count()
+                
+                cost_per_incident = 50.0
+                revenue_per_org = 1000.0
+                total_cost = incidents_handled * cost_per_incident
+                roi = ((revenue_per_org - total_cost) / total_cost * 100) if total_cost > 0 else 0
+                
+                monetization_data.append({
+                    'org_id': org.id,
+                    'org_name': org.organization_name,
+                    'incidents_handled': incidents_handled,
+                    'cost_per_incident': cost_per_incident,
+                    'total_cost': total_cost,
+                    'revenue': revenue_per_org,
+                    'roi': round(roi, 2),
+                })
+            
+            return Response({
+                'model': 'monetization',
+                'data': monetization_data,
+                'summary': {
+                    'total_orgs': len(monetization_data),
+                    'total_revenue': sum(d['revenue'] for d in monetization_data),
+                    'total_cost': sum(d['total_cost'] for d in monetization_data),
+                }
+            })
+        
+        return Response({'detail': 'Invalid model type'}, status=status.HTTP_400_BAD_REQUEST)

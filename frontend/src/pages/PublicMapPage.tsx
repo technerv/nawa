@@ -169,14 +169,19 @@ export default function PublicMapPage() {
 	const center: [number, number] = [-1.286389, 36.817223]
 
 	return (
-		<div>
-			<h2>Public Map</h2>
-            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 mb-3">
-                <div className="flex flex-wrap gap-3 items-center">
+		<div className="space-y-6">
+			<div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
+				<h2 className="text-3xl font-bold mb-2">Public Map</h2>
+				<p className="text-gray-100 text-sm">View crime incidents on an interactive map</p>
+			</div>
+			<div style={{ height: '85vh', width: '100%', border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden', position: 'relative' }}>
+                {/* Left Side Controls - Map Properties */}
+                <div style={{ position: 'absolute', zIndex: 1000, left: 12, top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <button 
                         type="button" 
                         onClick={() => { query.refetch(); neighborhoods.refetch() }}
-                        className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2"
+                        className="px-3 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-lg flex items-center gap-2 text-sm"
+                        title="Refresh map data"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -186,7 +191,8 @@ export default function PublicMapPage() {
                     <button 
                         type="button" 
                         onClick={() => setFitKenyaTick((t) => t + 1)}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2"
+                        className="px-3 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-lg flex items-center gap-2 text-sm"
+                        title="Zoom to Kenya"
                     >
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
@@ -196,7 +202,7 @@ export default function PublicMapPage() {
                     <button 
                         type="button" 
                         onClick={() => setShowNeighborhoods((v) => !v)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                        className={`px-3 py-2 rounded-lg font-medium transition-colors shadow-lg flex items-center gap-2 border text-sm ${
                             showNeighborhoods 
                                 ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700' 
                                 : 'bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200'
@@ -206,12 +212,12 @@ export default function PublicMapPage() {
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                         </svg>
-                        {showNeighborhoods ? 'Hide Neighborhoods' : 'Show Neighborhoods'}
+                        {showNeighborhoods ? 'Hide' : 'Show'} Neighborhoods
                     </button>
                     <button 
                         type="button" 
                         onClick={() => setShowCounties((v) => !v)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                        className={`px-3 py-2 rounded-lg font-medium transition-colors shadow-lg flex items-center gap-2 border text-sm ${
                             showCounties 
                                 ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700' 
                                 : 'bg-indigo-100 text-indigo-700 border-indigo-300 hover:bg-indigo-200'
@@ -220,12 +226,12 @@ export default function PublicMapPage() {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
                         </svg>
-                        {showCounties ? 'Hide Counties' : 'Show Counties'}
+                        {showCounties ? 'Hide' : 'Show'} Counties
                     </button>
                     <button 
                         type="button" 
                         onClick={() => setShowSubCounties((v) => !v)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                        className={`px-3 py-2 rounded-lg font-medium transition-colors shadow-lg flex items-center gap-2 border text-sm ${
                             showSubCounties 
                                 ? 'bg-teal-600 text-white border-teal-700 hover:bg-teal-700' 
                                 : 'bg-teal-100 text-teal-700 border-teal-300 hover:bg-teal-200'
@@ -234,12 +240,12 @@ export default function PublicMapPage() {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
                         </svg>
-                        {showSubCounties ? 'Hide Sub-Counties' : 'Show Sub-Counties'}
+                        {showSubCounties ? 'Hide' : 'Show'} Sub-Counties
                     </button>
                     <button 
                         type="button" 
                         onClick={() => setShowConstituencies((v) => !v)}
-                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                        className={`px-3 py-2 rounded-lg font-medium transition-colors shadow-lg flex items-center gap-2 border text-sm ${
                             showConstituencies 
                                 ? 'bg-cyan-600 text-white border-cyan-700 hover:bg-cyan-700' 
                                 : 'bg-cyan-100 text-cyan-700 border-cyan-300 hover:bg-cyan-200'
@@ -248,44 +254,48 @@ export default function PublicMapPage() {
                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
                         </svg>
-                        {showConstituencies ? 'Hide Constituencies' : 'Show Constituencies'}
+                        {showConstituencies ? 'Hide' : 'Show'} Constituencies
                     </button>
-                    <label className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium cursor-pointer hover:bg-orange-200 transition-colors shadow-sm flex items-center gap-2 border border-orange-300">
+                    <label className="px-3 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium cursor-pointer hover:bg-orange-200 transition-colors shadow-lg flex items-center gap-2 border border-orange-300 text-sm">
                         <input 
                             type="checkbox" 
                             checked={colorByDensity} 
                             onChange={(e) => setColorByDensity(e.target.checked)}
                             className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
                         />
-                        Color Counties by Density
-                    </label>
+                        Color by Density
+                </label>
                     <select 
                         value={baseMap} 
                         onChange={(e) => setBaseMap(e.target.value as any)}
-                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-colors shadow-sm"
+                        className="px-3 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-colors shadow-lg text-sm"
                     >
-                        <option value="standard">Standard</option>
-                        <option value="satellite">Satellite</option>
-                        <option value="terrain">Terrain</option>
-                    </select>
+                    <option value="standard">Standard</option>
+                    <option value="satellite">Satellite</option>
+                    <option value="terrain">Terrain</option>
+                </select>
+                </div>
+
+                {/* Right Side Controls - Severity Filter */}
+                <div style={{ position: 'absolute', zIndex: 1000, right: 12, top: 12, display: 'flex', flexDirection: 'column', gap: 8 }}>
                     <select 
                         value={severity} 
                         onChange={(e) => setSeverity(e.target.value)}
-                        className="px-4 py-2 bg-red-50 text-red-700 rounded-lg font-medium border border-red-200 hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors shadow-sm"
+                        className="px-3 py-2 bg-red-50 text-red-700 rounded-lg font-medium border border-red-200 hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors shadow-lg text-sm"
+                        title="Filter by severity"
                     >
-                        <option value="">All severities</option>
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                        <option value="critical">Critical</option>
-                    </select>
-                </div>
+                    <option value="">All severities</option>
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                </select>
             </div>
-			<div style={{ height: '85vh', width: '100%', border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
+
                 <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
                     <FitKenya tick={fitKenyaTick} />
                     {showCounties && (
-                        <div style={{ position: 'absolute', zIndex: 1000, left: 10, top: 10, background: '#fff', border: '1px solid #ddd', borderRadius: 6, padding: 8 }}>
+                        <div style={{ position: 'absolute', zIndex: 1000, left: 12, bottom: 12, background: 'rgba(255,255,255,0.95)', border: '1px solid #ddd', borderRadius: 6, padding: 8, boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
                             <strong>County color scale</strong>
                             <div style={{ display: 'grid', gap: 4, marginTop: 6 }}>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
@@ -398,23 +408,23 @@ export default function PublicMapPage() {
                         />
                     )}
                     {(query.data || []).length > 0 && (
-                        <div style={{ position: 'absolute', zIndex: 1000, right: 10, top: 10, background: '#fff', border: '2px solid #64748b', borderRadius: 8, padding: 10, boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
-                            <div style={{ fontWeight: 700, marginBottom: 6 }}>Severity</div>
-                            <div style={{ display: 'grid', gap: 6 }}>
+                        <div style={{ position: 'absolute', zIndex: 1000, right: 12, bottom: 12, background: 'rgba(255,255,255,0.95)', border: '1px solid rgba(148,163,184,0.7)', borderRadius: 14, padding: '10px 12px', boxShadow: '0 10px 25px rgba(0,0,0,0.6)' }}>
+                            <div style={{ fontSize: 12, letterSpacing: 0.2, textTransform: 'uppercase', opacity: 0.9, marginBottom: 4, fontWeight: 600 }}>Severity Legend</div>
+                            <div style={{ display: 'grid', gap: 6, marginTop: 2 }}>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ width: 16, height: 16, background: '#10b981', display: 'inline-block', borderRadius: 3 }}></span>
+                                    <span style={{ width: 16, height: 16, borderRadius: 999, background: '#10b981', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
                                     <span style={{ fontSize: 13, fontWeight: 500 }}>Low</span>
                                 </div>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ width: 16, height: 16, background: '#f59e0b', display: 'inline-block', borderRadius: 3 }}></span>
+                                    <span style={{ width: 16, height: 16, borderRadius: 999, background: '#f59e0b', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
                                     <span style={{ fontSize: 13, fontWeight: 500 }}>Medium</span>
                                 </div>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ width: 16, height: 16, background: '#ef4444', display: 'inline-block', borderRadius: 3 }}></span>
+                                    <span style={{ width: 16, height: 16, borderRadius: 999, background: '#ef4444', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
                                     <span style={{ fontSize: 13, fontWeight: 500 }}>High</span>
                                 </div>
                                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                                    <span style={{ width: 16, height: 16, background: '#7c3aed', display: 'inline-block', borderRadius: 3 }}></span>
+                                    <span style={{ width: 16, height: 16, borderRadius: 999, background: '#7c3aed', border: '1px solid rgba(15,23,42,0.9)', boxShadow: '0 0 0 1px rgba(148,163,184,0.8)' }}></span>
                                     <span style={{ fontSize: 13, fontWeight: 500 }}>Critical</span>
                                 </div>
                             </div>

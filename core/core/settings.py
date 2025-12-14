@@ -41,6 +41,7 @@ INSTALLED_APPS = [
 	'django_filters',
 	'corsheaders',
 	'drf_spectacular',
+	'channels',
 ]
 
 REST_FRAMEWORK = {
@@ -94,6 +95,7 @@ MIDDLEWARE = [
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'nawaapp.middleware.SecurityOrgWhitelistMiddleware',  # Check Security Org User whitelisting
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
@@ -117,6 +119,17 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'core.wsgi.application'
+ASGI_APPLICATION = 'core.asgi.application'
+
+# Channels Configuration
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            "hosts": [(os.getenv('REDIS_HOST', 'localhost'), int(os.getenv('REDIS_PORT', '6379')))],
+        },
+    },
+}
 
 
 # Database
@@ -200,6 +213,8 @@ PUBLIC_MODE = os.getenv('PUBLIC_MODE', 'False').lower() in ('1', 'true', 'yes')
 # Throttle rates (used for public endpoints)
 REST_FRAMEWORK_PUBLIC_THROTTLE_RATES = {
 	'public': os.getenv('PUBLIC_THROTTLE_RATE', '60/min'),
+	'device': os.getenv('DEVICE_THROTTLE_RATE', '10/hour'),  # Per device/session
+	'ip_anon': os.getenv('IP_ANON_THROTTLE_RATE', '50/day'),  # Per IP address
 }
 
 # Celery Configuration

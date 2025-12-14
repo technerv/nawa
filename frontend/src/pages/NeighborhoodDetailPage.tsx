@@ -84,7 +84,7 @@ export default function NeighborhoodDetailPage() {
           </button>
         </div>
       </div>
-      {hasAnyRole([ROLES.Admin, ROLES.SuperAdmin]) && (
+      {hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin]) && (
         <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
           <h3 className="text-xl font-bold mb-4 text-gray-800 border-b pb-3">Polygon (GeoJSON)</h3>
           <p className="text-sm text-gray-600 mb-3">Paste a Polygon GeoJSON with coordinates as [lon, lat].</p>
@@ -210,7 +210,7 @@ export default function NeighborhoodDetailPage() {
                     <span className={`px-2 py-1 rounded text-xs font-medium ${m.approved ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}`}>
                       {m.approved ? '✓ Approved' : '⏳ Pending approval'}
                     </span>
-                    {hasAnyRole([ROLES.Admin, ROLES.SuperAdmin]) && (
+                    {hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin]) && (
                       <>
                         {m.approved ? (
                           <button 

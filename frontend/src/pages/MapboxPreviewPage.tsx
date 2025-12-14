@@ -493,18 +493,18 @@ export default function MapboxPreviewPage() {
           >
             Refresh
           </button>
-          <div>
+    <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
             <select 
               value={baseStyle} 
               onChange={(e) => setBaseStyle(e.target.value as any)}
               className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
             >
-              <option value="vector">Vector</option>
-              <option value="satellite">Satellite</option>
-              <option value="terrain">Terrain</option>
-              <option value="custom">Custom (env)</option>
-            </select>
+            <option value="vector">Vector</option>
+            <option value="satellite">Satellite</option>
+            <option value="terrain">Terrain</option>
+            <option value="custom">Custom (env)</option>
+          </select>
           </div>
           <div className="flex gap-4 items-center">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -515,7 +515,7 @@ export default function MapboxPreviewPage() {
                 className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
               />
               <span className="text-sm font-medium text-gray-700">Show counties</span>
-            </label>
+          </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input 
                 type="checkbox" 
@@ -524,7 +524,7 @@ export default function MapboxPreviewPage() {
                 className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
               />
               <span className="text-sm font-medium text-gray-700">Show sub-counties</span>
-            </label>
+          </label>
             <label className="flex items-center gap-2 cursor-pointer">
               <input 
                 type="checkbox" 
@@ -533,7 +533,7 @@ export default function MapboxPreviewPage() {
                 className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
               />
               <span className="text-sm font-medium text-gray-700">Show constituencies</span>
-            </label>
+          </label>
           </div>
           <small className="text-gray-500 text-xs">Satellite/Terrain or Custom may require a provider key.</small>
         </div>

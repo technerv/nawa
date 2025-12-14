@@ -12,6 +12,11 @@ export interface MeResponse {
 	first_name: string
 	last_name: string
 	roles: string[]
+	organization: {
+		id: number
+		name: string
+		type: string
+	} | null
 }
 
 export async function login(username: string, password: string) {

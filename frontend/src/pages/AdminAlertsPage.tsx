@@ -9,7 +9,7 @@ export default function AdminAlertsPage() {
   const [note, setNote] = useState('')
   const [status, setStatus] = useState<string | null>(null)
 
-  const canUse = hasAnyRole([ROLES.Admin, ROLES.Dispatcher, ROLES.SuperAdmin])
+  const canUse = hasAnyRole([ROLES.SuperAdmin, ROLES.SecurityOrgUser, ROLES.Admin, ROLES.Dispatcher])
 
   async function submit(e: FormEvent) {
     e.preventDefault()

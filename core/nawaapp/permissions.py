@@ -1,6 +1,6 @@
 from rest_framework.permissions import BasePermission, SAFE_METHODS
 from django.contrib.auth.models import Group
-from .roles import ROLE_ADMIN, ROLE_SUPERVISOR, ROLE_DISPATCHER, ROLE_FIELD_OFFICER, ROLE_SUPERADMIN, ROLE_ANALYST, ROLE_REPORTER, ROLE_EXTERNAL
+from .roles import ROLE_SUPERADMIN, ROLE_SECURITY_ORG, ROLE_ADMIN, ROLE_SUPERVISOR, ROLE_DISPATCHER, ROLE_FIELD_OFFICER, ROLE_ANALYST, ROLE_REPORTER, ROLE_EXTERNAL
 
 
 def user_in_groups(user, groups):
@@ -19,7 +19,8 @@ class IsAdminOrDispatcherOrReadOnly(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        return user_in_groups(request.user, [ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_DISPATCHER])
+        # SecurityOrgUser and SuperAdmin can modify
+        return user_in_groups(request.user, [ROLE_SUPERADMIN, ROLE_SECURITY_ORG, ROLE_ADMIN, ROLE_DISPATCHER])
 
 
 class IsFieldOfficerOrAbove(BasePermission):
@@ -30,11 +31,12 @@ class IsFieldOfficerOrAbove(BasePermission):
 
 
 class IsReporterOrAbove(BasePermission):
-    """Allows Reporter, FieldOfficer, Dispatcher, Admin, and SuperAdmin to create/update reports"""
+    """Allows SecurityOrgUser and SuperAdmin to create/update reports"""
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
-        return user_in_groups(request.user, [ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_SUPERVISOR, ROLE_DISPATCHER, ROLE_FIELD_OFFICER, ROLE_REPORTER])
+        # SecurityOrgUser and SuperAdmin can modify
+        return user_in_groups(request.user, [ROLE_SUPERADMIN, ROLE_SECURITY_ORG, ROLE_ADMIN, ROLE_SUPERVISOR, ROLE_DISPATCHER, ROLE_FIELD_OFFICER, ROLE_REPORTER])
 
 class IsAdminOrSupervisor(BasePermission):
     def has_permission(self, request, view):
@@ -44,7 +46,7 @@ class IsAdminOrSupervisor(BasePermission):
                     return True
         except Exception:
             pass
-        return user_in_groups(request.user, [ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_SUPERVISOR])
+        return user_in_groups(request.user, [ROLE_SUPERADMIN, ROLE_SECURITY_ORG, ROLE_ADMIN, ROLE_SUPERVISOR])
 
 class AllowReadUnlessAnalystOnCases(BasePermission):
     def has_permission(self, request, view):

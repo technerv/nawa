@@ -97,12 +97,17 @@ export async function listCrimeReportMapPoints(params?: {
 	return res.data
 }
 
+export async function getCrimeReport(id: number) {
+	const res = await api.get<CrimeReport>(`/crimereportbook/${id}/`)
+	return res.data
+}
+
 export async function updateCrimeReport(id: number, payload: (Partial<CrimeReport> & { change_note?: string }) | ({ status?: string; severity?: string; change_note?: string })) {
 	const res = await api.patch<CrimeReport>(`/crimereportbook/${id}/`, payload)
 	return res.data
 }
 
-export async function createCrimeReport(payload: Partial<Omit<CrimeReport, 'id' | 'occurance_book_number' | 'date_created' | 'date_updated' | 'category_of_crime_name'>> & { upload_criminal_photo_file?: File }) {
+export async function createCrimeReport(payload: Partial<Omit<CrimeReport, 'id' | 'occurance_book_number' | 'date_created' | 'date_updated' | 'category_of_crime_name'>> & { upload_criminal_photo_file?: File; evidence_video_file?: File; evidence_audio_file?: File }) {
 	// Build multipart form data for image upload support
 	const form = new FormData()
 	if (payload.name_of_crime !== undefined) form.append('name_of_crime', String(payload.name_of_crime))
@@ -118,6 +123,8 @@ export async function createCrimeReport(payload: Partial<Omit<CrimeReport, 'id' 
 	if (payload.date_of_arrest) form.append('date_of_arrest', String(payload.date_of_arrest))
 	if (payload.category_of_crime !== undefined && payload.category_of_crime !== null) form.append('category_of_crime', String(payload.category_of_crime))
 	if ((payload as any).upload_criminal_photo_file instanceof File) form.append('upload_criminal_photo', (payload as any).upload_criminal_photo_file as File)
+	if (payload.evidence_video_file instanceof File) form.append('evidence_video', payload.evidence_video_file)
+	if (payload.evidence_audio_file instanceof File) form.append('evidence_audio', payload.evidence_audio_file)
 	const res = await api.post<CrimeReport>('/crimereportbook/', form, {
 		headers: { 'Content-Type': 'multipart/form-data' }
 	})
@@ -134,9 +141,15 @@ export async function createPublicCrimeReport(payload: {
   latitude?: number
   longitude?: number
   evidence_video_file?: File
+  evidence_audio_file?: File
+  session_id?: string
+  honeypot?: string
+  captcha_a?: number
+  captcha_b?: number
+  captcha_answer?: number
 }) {
   const { API_BASE_URL } = await import('./axios')
-  if (payload.evidence_video_file instanceof File) {
+  if (payload.evidence_video_file instanceof File || payload.evidence_audio_file instanceof File) {
     const form = new FormData()
     form.append('name_of_crime', String(payload.name_of_crime))
     form.append('category_of_crime', String(payload.category_of_crime))
@@ -146,9 +159,29 @@ export async function createPublicCrimeReport(payload: {
     if (payload.county) form.append('county', String(payload.county))
     if (payload.latitude != null) form.append('latitude', String(payload.latitude))
     if (payload.longitude != null) form.append('longitude', String(payload.longitude))
+    if (payload.session_id) form.append('session_id', String(payload.session_id))
+    // Backend currently only supports evidence_video field
+    // Priority: video > audio (if both are present, send video)
+    if (payload.evidence_video_file instanceof File) {
     form.append('evidence_video', payload.evidence_video_file)
+    } else if (payload.evidence_audio_file instanceof File) {
+      // Send audio as evidence_video since backend doesn't have separate audio field
+      form.append('evidence_video', payload.evidence_audio_file)
+    }
+    // Include honeypot and captcha fields (required by backend)
+    form.append('honeypot', String((payload as any).honeypot || ''))
+    if ((payload as any).captcha_a != null) form.append('captcha_a', String((payload as any).captcha_a))
+    if ((payload as any).captcha_b != null) form.append('captcha_b', String((payload as any).captcha_b))
+    if ((payload as any).captcha_answer != null) form.append('captcha_answer', String((payload as any).captcha_answer))
+    
+    const headers: HeadersInit = {}
+    if (payload.session_id) {
+      headers['X-Session-ID'] = payload.session_id
+    }
+    
     const res = await fetch(`${API_BASE_URL}/public/reports/`, {
       method: 'POST',
+      headers,
       body: form
     })
     if (!res.ok) {
@@ -163,9 +196,14 @@ export async function createPublicCrimeReport(payload: {
     }
     return await res.json()
   } else {
+    const headers: HeadersInit = { 'Content-Type': 'application/json' }
+    if (payload.session_id) {
+      headers['X-Session-ID'] = payload.session_id
+    }
+    
     const res = await fetch(`${API_BASE_URL}/public/reports/`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify(payload)
     })
     if (!res.ok) {

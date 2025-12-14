@@ -91,7 +91,7 @@ export default function TrackCasePage() {
     <div className="space-y-6">
       <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
         <div className="flex justify-between items-center">
-          <div>
+    <div>
             <h2 className="text-3xl font-bold mb-2">Track Case & Send Update</h2>
             <p className="text-gray-100 text-sm">Track your case and send anonymous updates</p>
           </div>
@@ -171,7 +171,7 @@ export default function TrackCasePage() {
                 placeholder="Phone or email"
               />
             </div>
-          </div>
+        </div>
           <button 
             disabled={sending} 
             type="submit"
@@ -179,7 +179,7 @@ export default function TrackCasePage() {
           >
             {sending ? 'Sending...' : 'Send Update'}
           </button>
-        </form>
+      </form>
       </div>
       {caseInfo && (
         <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">

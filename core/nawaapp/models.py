@@ -87,6 +87,15 @@ class CrimeReportBook(models.Model):
         blank=True,
         on_delete=models.SET_NULL
     )
+    assigned_organization = models.ForeignKey(
+        'SecurityOrgWhitelist',
+        verbose_name='Assigned Organization',
+        related_name='assigned_reports',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        help_text='Organization responsible for this report'
+    )
     assigned_at = models.DateTimeField(verbose_name='Assigned At', null=True, blank=True)
     triaged_at = models.DateTimeField(verbose_name='Triaged At', null=True, blank=True)
     escalated_at = models.DateTimeField(verbose_name='Escalated At', null=True, blank=True)
@@ -110,12 +119,22 @@ class CrimeReportBook(models.Model):
         if (self.latitude is None) ^ (self.longitude is None):
             raise ValidationError({'latitude': 'Latitude and longitude must both be provided.', 'longitude': 'Latitude and longitude must both be provided.'})
 
+        from decimal import Decimal, ROUND_HALF_UP
         if self.latitude is not None:
             if not (-90 <= float(self.latitude) <= 90):
                 raise ValidationError({'latitude': 'Latitude must be between -90 and 90.'})
+            # Normalize to 6 decimal places (round if more than 6)
+            lat_decimal = Decimal(str(self.latitude))
+            q = Decimal('0.000001')
+            self.latitude = lat_decimal.quantize(q, rounding=ROUND_HALF_UP)
+        
         if self.longitude is not None:
             if not (-180 <= float(self.longitude) <= 180):
                 raise ValidationError({'longitude': 'Longitude must be between -180 and 180.'})
+            # Normalize to 6 decimal places (round if more than 6)
+            lon_decimal = Decimal(str(self.longitude))
+            q = Decimal('0.000001')
+            self.longitude = lon_decimal.quantize(q, rounding=ROUND_HALF_UP)
     
     def __str__(self):
         return self.occurance_book_number
@@ -135,6 +154,14 @@ class CrimeReportBook(models.Model):
                 self.last_status_change = now
             if previous.assigned_to != self.assigned_to:
                 self.assigned_at = now if self.assigned_to else None
+                # Auto-assign organization when user is assigned
+                if self.assigned_to and not self.assigned_organization:
+                    try:
+                        whitelist = getattr(self.assigned_to, 'security_org_whitelist', None)
+                        if whitelist:
+                            self.assigned_organization = whitelist
+                    except Exception:
+                        pass
         else:
             if not self.last_status_change:
                 self.last_status_change = now
@@ -291,3 +318,109 @@ class NeighborhoodMessage(models.Model):
     text = models.TextField()
     approved = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+# Anonymous Session Tracking for Public Reports
+class AnonymousSession(models.Model):
+    """Tracks anonymous reporting sessions without requiring user accounts"""
+    session_id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    device_fingerprint = models.CharField(max_length=64, null=True, blank=True, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    user_agent = models.TextField(null=True, blank=True)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(auto_now=True)
+    report_count = models.IntegerField(default=0)
+    is_blocked = models.BooleanField(default=False)
+    blocked_reason = models.TextField(null=True, blank=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-last_seen']
+        indexes = [
+            models.Index(fields=['device_fingerprint', 'last_seen']),
+            models.Index(fields=['ip_address', 'last_seen']),
+        ]
+    
+    def __str__(self):
+        return f"Session {str(self.session_id)[:8]}... ({self.report_count} reports)"
+
+
+# Security Org Whitelist
+class SecurityOrgWhitelist(models.Model):
+    """Whitelist for Security Org Users - only whitelisted users can access"""
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='security_org_whitelist',
+        null=True,
+        blank=True
+    )
+    organization_name = models.CharField(max_length=200, verbose_name='Organization Name')
+    organization_type = models.CharField(
+        max_length=50,
+        choices=[
+            ('police', 'National Police Service'),
+            ('county_command', 'County Command Center'),
+            ('private_security', 'Private Security Firm'),
+            ('emergency', 'Emergency Responder'),
+            ('other', 'Other'),
+        ],
+        default='other'
+    )
+    contact_person = models.CharField(max_length=200, null=True, blank=True)
+    contact_email = models.EmailField(null=True, blank=True)
+    contact_phone = models.CharField(max_length=20, null=True, blank=True)
+    allowed_ip_ranges = models.JSONField(
+        default=list,
+        help_text='List of IP ranges (CIDR notation) allowed for this org'
+    )
+    allowed_vpn_names = models.JSONField(
+        default=list,
+        help_text='List of VPN names/identifiers allowed'
+    )
+    is_active = models.BooleanField(default=True)
+    notes = models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='whitelisted_orgs'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = 'Security Org Whitelist'
+        verbose_name_plural = 'Security Org Whitelists'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.organization_name} ({self.organization_type})"
+
+
+# Device Fingerprint for Abuse Prevention
+class DeviceFingerprint(models.Model):
+    """Tracks device fingerprints for abuse prevention"""
+    fingerprint_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True, db_index=True)
+    user_agent = models.TextField(null=True, blank=True)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    last_seen = models.DateTimeField(auto_now=True)
+    report_count = models.IntegerField(default=0)
+    abuse_score = models.FloatField(default=0.0, help_text='ML/rule-based abuse score')
+    is_blocked = models.BooleanField(default=False)
+    blocked_reason = models.TextField(null=True, blank=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    metadata = models.JSONField(default=dict, help_text='Additional device metadata')
+    
+    class Meta:
+        ordering = ['-last_seen']
+        indexes = [
+            models.Index(fields=['fingerprint_hash', 'is_blocked']),
+            models.Index(fields=['ip_address', 'is_blocked']),
+        ]
+    
+    def __str__(self):
+        status = "BLOCKED" if self.is_blocked else "ACTIVE"
+        return f"Device {self.fingerprint_hash[:16]}... ({self.report_count} reports, {status})"
