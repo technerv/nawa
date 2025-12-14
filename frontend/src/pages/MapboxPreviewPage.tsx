@@ -480,36 +480,72 @@ export default function MapboxPreviewPage() {
   }, [baseStyle])
 
   return (
-    <div>
-      <h2>Vector Map Preview</h2>
-      <div className="card" style={{ marginBottom: 12 }}>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button onClick={() => points.refetch()}>Refresh</button>
-          <select value={baseStyle} onChange={(e) => setBaseStyle(e.target.value as any)}>
-            <option value="vector">Vector</option>
-            <option value="satellite">Satellite</option>
-            <option value="terrain">Terrain</option>
-            <option value="custom">Custom (env)</option>
-          </select>
-          <small style={{ opacity: .8 }}>Satellite/Terrain or Custom may require a provider key.</small>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={showCounties} onChange={(e) => setShowCounties(e.target.checked)} />
-            Show counties
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={showSubCounties} onChange={(e) => setShowSubCounties(e.target.checked)} />
-            Show sub-counties
-          </label>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-            <input type="checkbox" checked={showConstituencies} onChange={(e) => setShowConstituencies(e.target.checked)} />
-            Show constituencies
-          </label>
+    <div className="space-y-6">
+      <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6">
+        <h2 className="text-3xl font-bold mb-2">Vector Map Preview</h2>
+        <p className="text-gray-100 text-sm">Advanced vector map with clustering and interactive features</p>
+      </div>
+      <div className="bg-white shadow-md rounded-lg p-4 border border-gray-200">
+        <div className="flex gap-3 items-center flex-wrap">
+          <button 
+            onClick={() => points.refetch()}
+            className="px-4 py-2 bg-primary text-white rounded-md hover:bg-secondary transition-colors font-medium"
+          >
+            Refresh
+          </button>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Map Style</label>
+            <select 
+              value={baseStyle} 
+              onChange={(e) => setBaseStyle(e.target.value as any)}
+              className="px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
+            >
+              <option value="vector">Vector</option>
+              <option value="satellite">Satellite</option>
+              <option value="terrain">Terrain</option>
+              <option value="custom">Custom (env)</option>
+            </select>
+          </div>
+          <div className="flex gap-4 items-center">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={showCounties} 
+                onChange={(e) => setShowCounties(e.target.checked)}
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+              />
+              <span className="text-sm font-medium text-gray-700">Show counties</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={showSubCounties} 
+                onChange={(e) => setShowSubCounties(e.target.checked)}
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+              />
+              <span className="text-sm font-medium text-gray-700">Show sub-counties</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={showConstituencies} 
+                onChange={(e) => setShowConstituencies(e.target.checked)}
+                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
+              />
+              <span className="text-sm font-medium text-gray-700">Show constituencies</span>
+            </label>
+          </div>
+          <small className="text-gray-500 text-xs">Satellite/Terrain or Custom may require a provider key.</small>
         </div>
       </div>
       {points.isError && (
-        <div style={{ color: '#fecaca', marginBottom: 12 }}>Failed to load map points.</div>
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-red-600">Failed to load map points.</p>
+        </div>
       )}
-      <div ref={mapRef} style={{ height: '85vh', width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden' }} />
+      <div className="bg-white shadow-md rounded-lg overflow-hidden border border-gray-200">
+        <div ref={mapRef} style={{ height: '85vh', width: '100%' }} />
+      </div>
     </div>
   )
 }

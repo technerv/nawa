@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import { createAnonymousWitnessMessage, getPublicCase, listWitnessMessages, CrimeWitness } from '../api/crime'
 import { showToast } from '../lib/toast'
+import { formatDate } from '../lib/dateFormat'
+import { formatLocation } from '../lib/locationFormat'
 
 export default function TrackCasePage() {
   const navigate = useNavigate()
@@ -86,50 +88,121 @@ export default function TrackCasePage() {
     try { navigate('/welcome') } catch {}
   }
   return (
-    <div>
-      <div className="row" style={{ alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2>Track Case & Send Update (Anonymous)</h2>
-        <button type="button" onClick={quickExit} style={{ padding: '6px 10px', background: '#0f172a', color: 'white', borderRadius: 6 }}>Quick Exit</button>
+    <div className="space-y-6">
+      <div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
+        <div className="flex justify-between items-center">
+          <div>
+            <h2 className="text-3xl font-bold mb-2">Track Case & Send Update</h2>
+            <p className="text-gray-100 text-sm">Track your case and send anonymous updates</p>
+          </div>
+          <button 
+            type="button" 
+            onClick={quickExit}
+            className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors font-medium"
+          >
+            Quick Exit
+          </button>
+        </div>
       </div>
       {toasts.length > 0 && (
-        <div style={{ display: 'grid', gap: 8, margin: '8px 0' }}>
+        <div className="grid gap-2">
           {toasts.map((t) => (
-            <div key={t.id} className="toast">{t.text}</div>
+            <div 
+              key={t.id} 
+              className={`p-3 rounded-lg ${
+                t.type === 'error' ? 'bg-red-50 border border-red-200 text-red-800' :
+                t.type === 'success' ? 'bg-green-50 border border-green-200 text-green-800' :
+                'bg-blue-50 border border-blue-200 text-blue-800'
+              }`}
+            >
+              {t.text}
+            </div>
           ))}
         </div>
       )}
-      <form onSubmit={submit} style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
-        <label>Case ID</label>
-        <div className="row" style={{ gap: 8 }}>
-          <input style={{ flex: 1 }} placeholder="OB Number or numeric ID" value={caseId} onChange={(e) => setCaseId(e.target.value)} />
-          <button type="button" onClick={lookupCase} disabled={loadingCase}>Find Case</button>
-        </div>
-        <label>Your Message</label>
-        <textarea rows={3} value={statement} onChange={(e) => setStatement(e.target.value)} />
-        <label>Name (optional)</label>
-        <input value={name} onChange={(e) => setName(e.target.value)} />
-        <label>Contact (optional)</label>
-        <input value={contact} onChange={(e) => setContact(e.target.value)} />
-        <button disabled={sending} type="submit">Send Update</button>
-      </form>
-      {caseInfo && (
-        <div className="card" style={{ marginTop: 12 }}>
-          <div className="row" style={{ justifyContent: 'space-between' }}>
-            <div style={{ fontWeight: 600 }}>{caseInfo.name_of_crime}</div>
-            <div style={{ fontSize: 12, opacity: .8 }}>OB: {caseInfo.occurance_book_number}</div>
+      <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
+        <h3 className="text-xl font-bold mb-4 text-gray-800 border-b pb-3">Case Information</h3>
+        <form onSubmit={submit} className="grid gap-4 max-w-2xl">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Case ID</label>
+            <div className="flex gap-3">
+              <input 
+                className="flex-1 px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="OB Number or numeric ID" 
+                value={caseId} 
+                onChange={(e) => setCaseId(e.target.value)} 
+              />
+              <button 
+                type="button" 
+                onClick={lookupCase} 
+                disabled={loadingCase}
+                className="px-4 py-2 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {loadingCase ? 'Finding...' : 'Find Case'}
+              </button>
+            </div>
           </div>
-          <div style={{ fontSize: 13, color: '#4b5563', marginTop: 4 }}>{caseInfo.location_name || caseInfo.county || ''}</div>
-          <div style={{ fontSize: 12, color: '#6b7280' }}>Updated: {new Date(caseInfo.date_updated).toLocaleString()}</div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Your Message <span className="text-red-500">*</span></label>
+            <textarea 
+              rows={4}
+              value={statement} 
+              onChange={(e) => setStatement(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent resize-y"
+              placeholder="Enter your message (minimum 10 characters)"
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Name (optional)</label>
+              <input 
+                value={name} 
+                onChange={(e) => setName(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Your name"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contact (optional)</label>
+              <input 
+                value={contact} 
+                onChange={(e) => setContact(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+                placeholder="Phone or email"
+              />
+            </div>
+          </div>
+          <button 
+            disabled={sending} 
+            type="submit"
+            className="px-6 py-3 bg-primary text-white rounded-md hover:bg-secondary transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+          >
+            {sending ? 'Sending...' : 'Send Update'}
+          </button>
+        </form>
+      </div>
+      {caseInfo && (
+        <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
+          <div className="flex justify-between items-start mb-3">
+            <h3 className="text-xl font-bold text-gray-800">{caseInfo.name_of_crime}</h3>
+            <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">OB: {caseInfo.occurance_book_number}</span>
+          </div>
+          <div className="text-gray-600 mb-2">{formatLocation(caseInfo.location_name, caseInfo.county, undefined, caseInfo.latitude, caseInfo.longitude)}</div>
+          <div className="text-sm text-gray-500">Updated: {formatDate(caseInfo.date_updated)}</div>
         </div>
       )}
       {messages.length > 0 && (
-        <div className="card" style={{ marginTop: 12 }}>
-          <strong>Recent messages</strong>
-          <div style={{ display: 'grid', gap: 8, marginTop: 8 }}>
+        <div className="bg-white shadow-md rounded-lg p-6 border border-gray-200">
+          <h3 className="text-xl font-bold mb-4 text-gray-800 border-b pb-3">Recent Messages</h3>
+          <div className="grid gap-4">
             {messages.map((m, i) => (
-              <div key={m.id ?? i} style={{ background: '#f3f4f6', padding: 8, borderRadius: 6 }}>
-                <div style={{ fontSize: 12, color: '#374151' }}>{(m.name || 'Anonymous')}{m.contact_information ? ` · ${m.contact_information}` : ''}</div>
-                <div style={{ marginTop: 4 }}>{m.statement}</div>
+              <div key={m.id ?? i} className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <div className="flex justify-between items-center mb-2">
+                  <div className="text-sm font-medium text-gray-700">
+                    {(m.name || 'Anonymous')}{m.contact_information ? ` · ${m.contact_information}` : ''}
+                  </div>
+                </div>
+                <div className="text-gray-800">{m.statement}</div>
               </div>
             ))}
           </div>

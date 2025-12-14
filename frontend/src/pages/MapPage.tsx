@@ -5,7 +5,9 @@ import { useQuery } from '@tanstack/react-query'
 import { listCrimeReportMapPoints } from '../api/crime'
 import { API_BASE_URL } from '../api/axios'
 import { Link, useNavigate } from 'react-router-dom'
-import { defaultMarkerIcon } from '../lib/leafletIcons'
+import { defaultMarkerIcon, createSeverityIcon } from '../lib/leafletIcons'
+import { formatDate } from '../lib/dateFormat'
+import { formatLocation, formatLocationForSOS } from '../lib/locationFormat'
 import { listNeighborhoods, neighborhoodAlertCounts } from '../api/neighborhood'
 import { showToast } from '../lib/toast'
 import { normalizeCountyName } from '../lib/normalizeCounty'
@@ -181,59 +183,118 @@ export default function MapPage() {
 		<div style={{ display: 'grid', gap: 12 }}>
 			<h2>Incident Map</h2>
 
-            <div className="card"><div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
-					<option value="">All severities</option>
-					<option value="low">Low</option>
-					<option value="medium">Medium</option>
-					<option value="high">High</option>
-					<option value="critical">Critical</option>
-				</select>
-				<select value={status} onChange={(e) => setStatus(e.target.value)}>
-					<option value="">All statuses</option>
-					<option value="submitted">Submitted</option>
-					<option value="triaged">Triaged</option>
-					<option value="escalated">Escalated</option>
-					<option value="in_progress">In Progress</option>
-					<option value="resolved">Resolved</option>
-					<option value="closed">Closed</option>
-				</select>
-                <button onClick={() => query.refetch()}>Refresh</button>
-                <button onClick={() => setFitKenyaTick((t) => t + 1)}>Zoom to Kenya</button>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={showNeighborhoods} onChange={(e) => setShowNeighborhoods(e.target.checked)} />
-                    Show neighborhoods
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={showCounties} onChange={(e) => setShowCounties(e.target.checked)} />
-                    Show counties
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={showSubCounties} onChange={(e) => setShowSubCounties(e.target.checked)} />
-                    Show sub-counties
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={showConstituencies} onChange={(e) => setShowConstituencies(e.target.checked)} />
-                    Show constituencies
-                </label>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={colorByDensity} onChange={(e) => setColorByDensity(e.target.checked)} />
-                    Color by density
-                </label>
-                <select value={baseMap} onChange={(e) => setBaseMap(e.target.value as any)}>
-                    <option value="standard">Standard</option>
-                    <option value="satellite">Satellite</option>
-                    <option value="terrain">Terrain</option>
-                </select>
-                {colorByDensity && (
-                    <select value={densityDays} onChange={(e) => setDensityDays(Number(e.target.value))}>
-                        <option value={7}>Last 7 days</option>
-                        <option value={30}>Last 30 days</option>
-                        <option value={90}>Last 90 days</option>
-                        <option value={365}>Last 365 days</option>
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4">
+                <div className="flex flex-wrap gap-3 items-center">
+                    <button 
+                        onClick={() => query.refetch()}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                    </button>
+                    <button 
+                        onClick={() => setFitKenyaTick((t) => t + 1)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                        </svg>
+                        Zoom to Kenya
+                    </button>
+                    <label className="px-4 py-2 bg-purple-100 text-purple-700 rounded-lg font-medium cursor-pointer hover:bg-purple-200 transition-colors shadow-sm flex items-center gap-2 border border-purple-300">
+                        <input 
+                            type="checkbox" 
+                            checked={showNeighborhoods} 
+                            onChange={(e) => setShowNeighborhoods(e.target.checked)}
+                            className="w-4 h-4 text-purple-600 rounded focus:ring-purple-500"
+                        />
+                        Show Neighborhoods
+                    </label>
+                    <label className="px-4 py-2 bg-indigo-100 text-indigo-700 rounded-lg font-medium cursor-pointer hover:bg-indigo-200 transition-colors shadow-sm flex items-center gap-2 border border-indigo-300">
+                        <input 
+                            type="checkbox" 
+                            checked={showCounties} 
+                            onChange={(e) => setShowCounties(e.target.checked)}
+                            className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
+                        />
+                        Show Counties
+                    </label>
+                    <label className="px-4 py-2 bg-teal-100 text-teal-700 rounded-lg font-medium cursor-pointer hover:bg-teal-200 transition-colors shadow-sm flex items-center gap-2 border border-teal-300">
+                        <input 
+                            type="checkbox" 
+                            checked={showSubCounties} 
+                            onChange={(e) => setShowSubCounties(e.target.checked)}
+                            className="w-4 h-4 text-teal-600 rounded focus:ring-teal-500"
+                        />
+                        Show Sub-Counties
+                    </label>
+                    <label className="px-4 py-2 bg-cyan-100 text-cyan-700 rounded-lg font-medium cursor-pointer hover:bg-cyan-200 transition-colors shadow-sm flex items-center gap-2 border border-cyan-300">
+                        <input 
+                            type="checkbox" 
+                            checked={showConstituencies} 
+                            onChange={(e) => setShowConstituencies(e.target.checked)}
+                            className="w-4 h-4 text-cyan-600 rounded focus:ring-cyan-500"
+                        />
+                        Show Constituencies
+                    </label>
+                    <label className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium cursor-pointer hover:bg-orange-200 transition-colors shadow-sm flex items-center gap-2 border border-orange-300">
+                        <input 
+                            type="checkbox" 
+                            checked={colorByDensity} 
+                            onChange={(e) => setColorByDensity(e.target.checked)}
+                            className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                        />
+                        Color Counties by Density
+                    </label>
+                    <select 
+                        value={baseMap} 
+                        onChange={(e) => setBaseMap(e.target.value as any)}
+                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-colors shadow-sm"
+                    >
+                        <option value="standard">Standard</option>
+                        <option value="satellite">Satellite</option>
+                        <option value="terrain">Terrain</option>
                     </select>
-                )}
-			</div></div>
+                    {colorByDensity && (
+                        <select 
+                            value={densityDays} 
+                            onChange={(e) => setDensityDays(Number(e.target.value))}
+                            className="px-4 py-2 bg-amber-100 text-amber-700 rounded-lg font-medium border border-amber-300 hover:bg-amber-200 focus:ring-2 focus:ring-amber-500 focus:border-transparent transition-colors shadow-sm"
+                        >
+                            <option value={7}>Last 7 days</option>
+                            <option value={30}>Last 30 days</option>
+                            <option value={90}>Last 90 days</option>
+                            <option value={365}>Last 365 days</option>
+                        </select>
+                    )}
+                    <select 
+                        value={severity} 
+                        onChange={(e) => setSeverity(e.target.value)}
+                        className="px-4 py-2 bg-red-50 text-red-700 rounded-lg font-medium border border-red-200 hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors shadow-sm"
+                    >
+                        <option value="">All severities</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                    <select 
+                        value={status} 
+                        onChange={(e) => setStatus(e.target.value)}
+                        className="px-4 py-2 bg-slate-100 text-slate-700 rounded-lg font-medium border border-slate-300 hover:bg-slate-200 focus:ring-2 focus:ring-slate-500 focus:border-transparent transition-colors shadow-sm"
+                    >
+                        <option value="">All statuses</option>
+                        <option value="submitted">Submitted</option>
+                        <option value="triaged">Triaged</option>
+                        <option value="escalated">Escalated</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="resolved">Resolved</option>
+                        <option value="closed">Closed</option>
+                    </select>
+                </div>
+            </div>
 
 			{query.isLoading && <p>Loading map data…</p>}
             {query.isError && (
@@ -412,15 +473,7 @@ export default function MapPage() {
                         )
                     })}
                     {query.data?.map((point) => {
-                        const sc = (sev: string) => {
-                            const s = String(sev || '').toLowerCase()
-                            if (s === 'low') return '#10b981'
-                            if (s === 'medium') return '#f59e0b'
-                            if (s === 'high') return '#ef4444'
-                            if (s === 'critical') return '#7c3aed'
-                            return '#2563eb'
-                        }
-                        const icon = L.divIcon({ className: 'leaflet-div-icon', html: `<span class=\"pulse-marker\" style=\"--pulse-color:${sc(point.severity)}\"></span>`, iconSize: [16,16], iconAnchor: [8,8] })
+                        const icon = createSeverityIcon(point.severity || '')
                         const scName = findSubCountyForPoint(point.latitude, point.longitude, subCountyGeo)
                         const countyName = normalizeCountyName(point.county || scName || '')
                         const coords = `${point.latitude?.toFixed ? point.latitude.toFixed(6) : point.latitude}, ${point.longitude?.toFixed ? point.longitude.toFixed(6) : point.longitude}`
@@ -439,12 +492,8 @@ export default function MapPage() {
                                     <br />
                                     County: {countyName || '—'}
                                     <br />
-                                    {point.location_name && (
-                                        <>
-                                            Location: {point.location_name} ({coords})
-                                            <br />
-                                        </>
-                                    )}
+                                    Location: {formatLocation(point.location_name, countyName, scName, point.latitude, point.longitude)} ({coords})
+                                    <br />
                                     {point.location_description && (
                                         <>
                                             Notes: {point.location_description}
@@ -453,13 +502,14 @@ export default function MapPage() {
                                     )}
                                     Sub-County: {scName || '—'}
                                     <br />
-                                    Updated: {new Date(point.date_updated).toLocaleString()}
+                                    Updated: {formatDate(point.date_updated)}
                                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                                         <button
                                             style={{ padding: '6px 10px', background: '#dc2626', color: 'white', borderRadius: 6 }}
                                             onClick={() => {
-                                                const message = `[${String(point.severity || '').toUpperCase()}] SOS: ${point.name_of_crime} — ${point.location_name || coords}`
-                                                const payload = { latitude: point.latitude, longitude: point.longitude, location_name: point.location_name || `Map ${coords}`, county: countyName }
+                                                const loc = formatLocationForSOS(point.location_name, countyName, point.latitude, point.longitude)
+                                                const message = `[${String(point.severity || '').toUpperCase()}] SOS: ${point.name_of_crime} — ${loc}`
+                                                const payload = { latitude: point.latitude, longitude: point.longitude, location_name: loc, county: countyName }
                                                 window.dispatchEvent(new CustomEvent('open_sos', { detail: { payload, message } }))
                                             }}
                                         >

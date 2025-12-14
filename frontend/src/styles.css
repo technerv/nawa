@@ -1,202 +1,112 @@
-html, body, #root {
-	height: 100%;
-}
-body {
-	margin: 0;
-	font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
-	background: linear-gradient(180deg, #0f172a 0%, #0b1220 100%);
-	color: #e5e7eb;
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
-}
-input, select, button {
-	padding: 8px;
-	border: 1px solid #ccc;
-	border-radius: 4px;
-}
-button {
-	cursor: pointer;
-}
-table th, table td {
-	vertical-align: top;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply box-border;
+  }
+  
+  html {
+    @apply h-full;
+  }
+  
+  body {
+    @apply m-0 font-sans antialiased h-full;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+  }
+  
+  #root {
+    @apply min-h-screen;
+  }
 }
 
-/* Layout */
-header {
-	background: radial-gradient(1200px 400px at 20% -10%, rgba(99,102,241,0.25), transparent),
-		linear-gradient(90deg, #0ea5e9 0%, #6366f1 50%, #8b5cf6 100%);
-	border-bottom: 1px solid rgba(255,255,255,0.08);
-	box-shadow: 0 10px 30px rgba(0,0,0,0.25);
-	color: #fff;
-}
-header nav a {
-	color: #e5e7eb;
-	text-decoration: none;
-	padding: 8px 12px;
-	border-radius: 10px;
-	backdrop-filter: saturate(140%) blur(8px);
-	background: rgba(255,255,255,0.06);
-	border: 1px solid rgba(255,255,255,0.12);
-	transition: all .2s ease;
-}
-header nav a:hover {
-	background: rgba(255,255,255,0.14);
-	border-color: rgba(255,255,255,0.24);
-}
-
-/* Buttons */
-button, .btn {
-	background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.04));
-	border: 1px solid rgba(255,255,255,0.18);
-	border-radius: 10px;
-	padding: 10px 14px;
-	line-height: 1;
-	transition: transform .08s ease, box-shadow .2s ease, background .2s ease, border-color .2s ease;
-	color: #e5e7eb;
-	box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06), 0 6px 20px rgba(0,0,0,0.25);
-	backdrop-filter: saturate(140%) blur(6px);
-}
-button:hover, .btn:hover {
-	transform: translateY(-1px);
-	box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12), 0 10px 24px rgba(0,0,0,0.35);
-}
-.btn-primary, button[type="submit"] {
-	background: linear-gradient(180deg, #22d3ee, #0ea5e9);
-	border-color: rgba(14,165,233,0.5);
-	color: #0b1220;
-	text-shadow: 0 1px 0 rgba(255,255,255,0.3);
-}
-.btn-primary:hover, button[type="submit"]:hover {
-	background: linear-gradient(180deg, #67e8f9, #22d3ee);
-}
-button:disabled, .btn:disabled {
-	opacity: 0.6;
-	cursor: not-allowed;
-}
-
-/* Inputs */
-input, select, textarea {
-	background: rgba(17,24,39,0.6);
-	border: 1px solid rgba(255,255,255,0.14);
-	border-radius: 10px;
-	padding: 10px 12px;
-	outline: none;
-	color: #e5e7eb;
-	box-shadow: inset 0 1px 2px rgba(0,0,0,0.3);
-}
-input::placeholder, textarea::placeholder { color: #9ca3af; }
-input:focus, select:focus, textarea:focus {
-	border-color: #67e8f9;
-	box-shadow: 0 0 0 3px rgba(103,232,249,0.2);
-}
-label {
-	font-size: 12px;
-	color: #cbd5e1;
-}
-
-/* Cards (simple containers) */
-.card {
-	background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-	border: 1px solid rgba(255,255,255,0.12);
-	border-radius: 16px;
-	padding: 16px;
-	box-shadow: 0 12px 30px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.04);
-	backdrop-filter: blur(6px) saturate(140%);
-}
-
-/* Tables */
-table {
-	width: 100%;
-	border-collapse: collapse;
-	background: linear-gradient(180deg, rgba(255,255,255,0.06), rgba(255,255,255,0.02));
-	border: 1px solid rgba(255,255,255,0.12);
-	border-radius: 12px;
-	overflow: hidden;
-	color: #e5e7eb;
-}
-thead th {
-	background: linear-gradient(180deg, rgba(255,255,255,0.12), rgba(255,255,255,0.06));
-	color: #e5e7eb;
-	font-weight: 600;
-}
-th, td {
-	padding: 12px 14px;
-	border-top: 1px solid rgba(255,255,255,0.08);
-}
-tbody tr:hover {
-	background: rgba(255,255,255,0.06);
-}
-
-/* Utility spacing */
-.row {
-	display: flex;
-	gap: 10px;
-	align-items: center;
-	flex-wrap: wrap;
-}
-.mt-2 { margin-top: 8px; }
-.mt-3 { margin-top: 12px; }
-.mt-4 { margin-top: 16px; }
-.mb-2 { margin-bottom: 8px; }
-.mb-3 { margin-bottom: 12px; }
-.mb-4 { margin-bottom: 16px; }
-.pulse-marker{
-  position:relative;
-  width:16px;
-  height:16px;
-  border-radius:9999px;
-  background:var(--pulse-color,#22d3ee);
-  display:inline-block;
-  box-shadow: 0 0 0 2px rgba(34,211,238,0.3);
-}
-.pulse-marker::after{
-  content:"";
-  position:absolute;
-  left:0;top:0;width:100%;height:100%;
-  border-radius:inherit;
-  background:var(--pulse-color,#22d3ee);
-  animation:pulse 2s ease-out infinite;
-  opacity:.5;
-  will-change:transform,opacity;
-}
-@keyframes pulse{
-  0%{transform:scale(1);opacity:.5}
-  100%{transform:scale(2.2);opacity:0}
-}
-
-.leaflet-div-icon{overflow:visible;background:transparent;border:none}
-
-/* App container */
-.app-shell {
-	min-height: 100vh;
-	background: transparent;
-}
-.app-header-inner {
-	max-width: 1100px;
-	margin: 0 auto;
-	padding: 18px;
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-.app-title {
-	margin: 0;
-	font-size: 22px;
-	letter-spacing: 0.2px;
-	text-shadow: 0 1px 0 rgba(0,0,0,0.25);
-}
-.app-main {
-	max-width: 1100px;
-	margin: 16px auto;
-	padding: 16px;
-}
-
-/* Toasts */
-.toast {
-	padding: 10px 14px;
-	border-radius: 12px;
-	border: 1px solid rgba(255,255,255,0.18);
-	background: linear-gradient(180deg, rgba(255,255,255,0.14), rgba(255,255,255,0.06));
-	color: #e5e7eb;
-	box-shadow: 0 10px 24px rgba(0,0,0,0.35);
+@layer components {
+  /* Leaflet map container fixes */
+  .leaflet-container {
+    @apply z-0;
+    height: 100%;
+    width: 100%;
+    font-family: inherit;
+  }
+  
+  /* Ensure map tiles load properly */
+  .leaflet-tile-container img {
+    max-width: none !important;
+  }
+  
+  /* Fix for Leaflet marker icons - these will be handled by the JS import */
+  .leaflet-marker-icon,
+  .leaflet-marker-shadow {
+    display: block;
+  }
+  
+  /* Severity marker styling */
+  .severity-marker {
+    background: transparent !important;
+    border: none !important;
+  }
+  
+  /* Ensure SOS modal appears above Leaflet maps */
+  .sos-modal-overlay {
+    z-index: 10000 !important;
+    position: fixed !important;
+  }
+  
+  .sos-modal-content {
+    z-index: 10001 !important;
+    position: relative !important;
+  }
+  
+  /* Pulse marker animation for severity indicators */
+  .pulse-marker {
+    display: block;
+    width: 16px;
+    height: 16px;
+    background-color: var(--pulse-color, #2563eb);
+    border: 2px solid white;
+    border-radius: 50%;
+    box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.4);
+    animation: pulse 2s infinite;
+  }
+  
+  @keyframes pulse {
+    0% {
+      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0.4);
+    }
+    70% {
+      box-shadow: 0 0 0 8px rgba(0, 0, 0, 0);
+    }
+    100% {
+      box-shadow: 0 0 0 0 rgba(0, 0, 0, 0);
+    }
+  }
+  
+  /* Table styling */
+  .table-bordered {
+    @apply border-collapse;
+    border: 1px solid rgba(203, 213, 225, 0.3);
+  }
+  
+  .table-bordered th,
+  .table-bordered td {
+    @apply border;
+    border-color: rgba(203, 213, 225, 0.3);
+    @apply px-4 py-3;
+  }
+  
+  .table-bordered thead th {
+    @apply bg-gray-50 dark:bg-gray-800;
+    @apply font-semibold;
+    @apply text-left;
+    border-bottom: 2px solid rgba(203, 213, 225, 0.5);
+  }
+  
+  .table-bordered tbody tr:hover {
+    @apply bg-gray-50 dark:bg-gray-800;
+  }
+  
+  .table-bordered tbody tr:nth-child(even) {
+    @apply bg-gray-50/50 dark:bg-gray-800/50;
+  }
 }

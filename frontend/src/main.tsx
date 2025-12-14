@@ -5,6 +5,8 @@ import { BrowserRouter } from 'react-router-dom'
 import App from './App'
 import './styles.css'
 import 'leaflet/dist/leaflet.css'
+// Initialize Leaflet icons
+import './lib/leafletIcons'
 
 const queryClient = new QueryClient()
 

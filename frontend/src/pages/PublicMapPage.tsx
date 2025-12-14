@@ -4,7 +4,9 @@ import L from 'leaflet'
 import { useEffect, useMemo, useState } from 'react'
 import { listNeighborhoods } from '../api/neighborhood'
 import { api, API_BASE_URL } from '../api/axios'
-import { defaultMarkerIcon } from '../lib/leafletIcons'
+import { defaultMarkerIcon, createSeverityIcon } from '../lib/leafletIcons'
+import { formatDate } from '../lib/dateFormat'
+import { formatLocation, formatLocationForSOS } from '../lib/locationFormat'
 import { showToast } from '../lib/toast'
 import { normalizeCountyName } from '../lib/normalizeCounty'
 
@@ -169,29 +171,115 @@ export default function PublicMapPage() {
 	return (
 		<div>
 			<h2>Public Map</h2>
-            <div className="row mb-3" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                <button type="button" onClick={() => { query.refetch(); neighborhoods.refetch() }}>Refresh</button>
-                <button type="button" onClick={() => setFitKenyaTick((t) => t + 1)}>Zoom to Kenya</button>
-                <button type="button" onClick={() => setShowNeighborhoods((v) => !v)}>{showNeighborhoods ? 'Hide Neighborhoods' : 'Show Neighborhoods'}</button>
-                <button type="button" onClick={() => setShowCounties((v) => !v)}>{showCounties ? 'Hide Counties' : 'Show Counties'}</button>
-                <button type="button" onClick={() => setShowSubCounties((v) => !v)}>{showSubCounties ? 'Hide Sub-Counties' : 'Show Sub-Counties'}</button>
-                <button type="button" onClick={() => setShowConstituencies((v) => !v)}>{showConstituencies ? 'Hide Constituencies' : 'Show Constituencies'}</button>
-                <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <input type="checkbox" checked={colorByDensity} onChange={(e) => setColorByDensity(e.target.checked)} />
-                    Color counties by density
-                </label>
-                <select value={baseMap} onChange={(e) => setBaseMap(e.target.value as any)}>
-                    <option value="standard">Standard</option>
-                    <option value="satellite">Satellite</option>
-                    <option value="terrain">Terrain</option>
-                </select>
-                <select value={severity} onChange={(e) => setSeverity(e.target.value)}>
-                    <option value="">All severities</option>
-                    <option value="low">Low</option>
-                    <option value="medium">Medium</option>
-                    <option value="high">High</option>
-                    <option value="critical">Critical</option>
-                </select>
+            <div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 mb-3">
+                <div className="flex flex-wrap gap-3 items-center">
+                    <button 
+                        type="button" 
+                        onClick={() => { query.refetch(); neighborhoods.refetch() }}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors shadow-sm flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                        </svg>
+                        Refresh
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setFitKenyaTick((t) => t + 1)}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                        </svg>
+                        Zoom to Kenya
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setShowNeighborhoods((v) => !v)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                            showNeighborhoods 
+                                ? 'bg-purple-600 text-white border-purple-700 hover:bg-purple-700' 
+                                : 'bg-purple-100 text-purple-700 border-purple-300 hover:bg-purple-200'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        {showNeighborhoods ? 'Hide Neighborhoods' : 'Show Neighborhoods'}
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setShowCounties((v) => !v)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                            showCounties 
+                                ? 'bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700' 
+                                : 'bg-indigo-100 text-indigo-700 border-indigo-300 hover:bg-indigo-200'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" />
+                        </svg>
+                        {showCounties ? 'Hide Counties' : 'Show Counties'}
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setShowSubCounties((v) => !v)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                            showSubCounties 
+                                ? 'bg-teal-600 text-white border-teal-700 hover:bg-teal-700' 
+                                : 'bg-teal-100 text-teal-700 border-teal-300 hover:bg-teal-200'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v7a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1H5a1 1 0 01-1-1v-3zM14 16a1 1 0 011-1h4a1 1 0 011 1v3a1 1 0 01-1 1h-4a1 1 0 01-1-1v-3z" />
+                        </svg>
+                        {showSubCounties ? 'Hide Sub-Counties' : 'Show Sub-Counties'}
+                    </button>
+                    <button 
+                        type="button" 
+                        onClick={() => setShowConstituencies((v) => !v)}
+                        className={`px-4 py-2 rounded-lg font-medium transition-colors shadow-sm flex items-center gap-2 border ${
+                            showConstituencies 
+                                ? 'bg-cyan-600 text-white border-cyan-700 hover:bg-cyan-700' 
+                                : 'bg-cyan-100 text-cyan-700 border-cyan-300 hover:bg-cyan-200'
+                        }`}
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                        </svg>
+                        {showConstituencies ? 'Hide Constituencies' : 'Show Constituencies'}
+                    </button>
+                    <label className="px-4 py-2 bg-orange-100 text-orange-700 rounded-lg font-medium cursor-pointer hover:bg-orange-200 transition-colors shadow-sm flex items-center gap-2 border border-orange-300">
+                        <input 
+                            type="checkbox" 
+                            checked={colorByDensity} 
+                            onChange={(e) => setColorByDensity(e.target.checked)}
+                            className="w-4 h-4 text-orange-600 rounded focus:ring-orange-500"
+                        />
+                        Color Counties by Density
+                    </label>
+                    <select 
+                        value={baseMap} 
+                        onChange={(e) => setBaseMap(e.target.value as any)}
+                        className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium border border-gray-300 hover:bg-gray-200 focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-colors shadow-sm"
+                    >
+                        <option value="standard">Standard</option>
+                        <option value="satellite">Satellite</option>
+                        <option value="terrain">Terrain</option>
+                    </select>
+                    <select 
+                        value={severity} 
+                        onChange={(e) => setSeverity(e.target.value)}
+                        className="px-4 py-2 bg-red-50 text-red-700 rounded-lg font-medium border border-red-200 hover:bg-red-100 focus:ring-2 focus:ring-red-500 focus:border-transparent transition-colors shadow-sm"
+                    >
+                        <option value="">All severities</option>
+                        <option value="low">Low</option>
+                        <option value="medium">Medium</option>
+                        <option value="high">High</option>
+                        <option value="critical">Critical</option>
+                    </select>
+                </div>
             </div>
 			<div style={{ height: '85vh', width: '100%', border: '1px solid #ccc', borderRadius: 8, overflow: 'hidden' }}>
                 <MapContainer center={center} zoom={6} style={{ height: '100%', width: '100%' }}>
@@ -333,15 +421,7 @@ export default function PublicMapPage() {
                         </div>
                     )}
                     {(query.data || []).filter((p) => !severity || String(p.severity).toLowerCase() === severity).map((p) => {
-                        const sc = (sev: string) => {
-                            const s = String(sev || '').toLowerCase()
-                            if (s === 'low') return '#10b981'
-                            if (s === 'medium') return '#f59e0b'
-                            if (s === 'high') return '#ef4444'
-                            if (s === 'critical') return '#7c3aed'
-                            return '#2563eb'
-                        }
-                        const icon = L.divIcon({ className: 'leaflet-div-icon', html: `<span class=\"pulse-marker\" style=\"--pulse-color:${sc(p.severity)}\"></span>`, iconSize: [16,16], iconAnchor: [8,8] })
+                        const icon = createSeverityIcon(p.severity || '')
                         const scName = findSubCountyForPoint(p.latitude, p.longitude, subCountyGeo)
                         const normalizedFromSub = normalizeCountyName(scName || '')
                         const normalizedFromField = normalizeCountyName(p.county || '')
@@ -362,17 +442,18 @@ export default function PublicMapPage() {
                                     <br />
                                     Sub-County: {scName || '—'}
                                     <br />
-                                    Location: {p.location_name || '—'} ({coords})
+                                    Location: {formatLocation(p.location_name, countyName, scName, p.latitude, p.longitude)} ({coords})
                                     <br />
                                     Severity: {p.severity}
                                     <br />
-                                    Updated: {new Date(p.date_updated).toLocaleString()}
+                                    Updated: {formatDate(p.date_updated)}
                                     <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                                         <button
                                             style={{ padding: '6px 10px', background: '#dc2626', color: 'white', borderRadius: 6 }}
                                             onClick={() => {
-                                                const message = `[${String(p.severity || '').toUpperCase()}] SOS: ${p.name_of_crime} — ${p.location_name || coords}`
-                                                const payload = { latitude: p.latitude, longitude: p.longitude, location_name: p.location_name || `Map ${coords}`, county: countyName }
+                                                const loc = formatLocationForSOS(p.location_name, countyName, p.latitude, p.longitude)
+                                                const message = `[${String(p.severity || '').toUpperCase()}] SOS: ${p.name_of_crime} — ${loc}`
+                                                const payload = { latitude: p.latitude, longitude: p.longitude, location_name: loc, county: countyName }
                                                 window.dispatchEvent(new CustomEvent('open_sos', { detail: { payload, message } }))
                                             }}
                                         >

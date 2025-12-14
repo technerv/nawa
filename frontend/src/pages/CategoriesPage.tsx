@@ -33,59 +33,137 @@ export default function CategoriesPage() {
 
 	const canCreate = hasAnyRole([ROLES.Admin, ROLES.Dispatcher, ROLES.SuperAdmin])
 	return (
-		<div>
-			<h2>Crime Categories</h2>
-
-			<div className="card mb-3"><div style={{ display: 'flex', gap: 8 }}>
-				<input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
-				<button onClick={() => { setPage(1); refetch() }}>Search</button>
+		<div className="space-y-6">
+			<div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6">
+				<h2 className="text-3xl font-bold mb-2">Crime Categories</h2>
+				<p className="text-gray-100 text-sm">Manage crime categories and their short codes</p>
 			</div>
-			<small style={{ color: '#cbd5e1', display: 'block', marginTop: -8, marginBottom: 0 }}>Use keywords to find categories. Admins can create new ones.</small></div>
+
+			<div className="bg-white shadow-md rounded-lg p-4 mb-6 border border-gray-200">
+				<div className="flex gap-3 items-end">
+					<div className="flex-1">
+						<label className="block text-sm font-medium text-gray-700 mb-1">Search Categories</label>
+						<input 
+							placeholder="Search..." 
+							value={search} 
+							onChange={(e) => setSearch(e.target.value)}
+							className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+						/>
+					</div>
+					<button 
+						onClick={() => { setPage(1); refetch() }}
+						className="px-4 py-2 bg-primary text-white rounded-md hover:bg-secondary transition-colors font-medium"
+					>
+						Search
+					</button>
+				</div>
+				<small className="text-gray-500 text-xs mt-1 block">Use keywords to find categories. Admins can create new ones.</small>
+			</div>
 
 			{canCreate ? (
-				<div className="card mb-3"><form onSubmit={onSubmit} style={{ display: 'grid', gap: 8, maxWidth: 480 }}>
-					<input required name="crime_category" placeholder="Category name" value={crime_category} onChange={(e) => setCrimeCategory(e.target.value)} />
-					<input required name="crime_short_code" placeholder="Short code (3 letters)" value={crime_short_code} onChange={(e) => setCrimeShortCode(e.target.value)} />
-					<button type="submit" disabled={createMut.isPending}>Create</button>
-					{createMut.isError && <p style={{ color: 'crimson' }}>{(createMut.error as any)?.response?.data?.crime_short_code?.[0] ?? 'Create failed'}</p>}
-				</form></div>
+				<div className="bg-white shadow-md rounded-lg p-6 mb-6 border border-gray-200">
+					<h3 className="text-xl font-bold mb-4 text-gray-800 border-b pb-3">Create New Category</h3>
+					<form onSubmit={onSubmit} className="grid gap-4 max-w-2xl">
+						<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">Category Name <span className="text-red-500">*</span></label>
+								<input 
+									required 
+									name="crime_category" 
+									placeholder="Category name" 
+									value={crime_category} 
+									onChange={(e) => setCrimeCategory(e.target.value)}
+									className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent"
+								/>
+							</div>
+							<div>
+								<label className="block text-sm font-medium text-gray-700 mb-1">Short Code <span className="text-red-500">*</span></label>
+								<input 
+									required 
+									name="crime_short_code" 
+									placeholder="Short code (3 letters)" 
+									value={crime_short_code} 
+									onChange={(e) => setCrimeShortCode(e.target.value)}
+									maxLength={3}
+									className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent uppercase"
+								/>
+							</div>
+						</div>
+						<div className="flex gap-3">
+							<button 
+								type="submit" 
+								disabled={createMut.isPending}
+								className="px-6 py-2 bg-primary text-white rounded-md hover:bg-secondary transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+							>
+								{createMut.isPending ? 'Creating...' : 'Create Category'}
+							</button>
+							{createMut.isError && (
+								<p className="text-red-600 text-sm flex items-center">
+									{(createMut.error as any)?.response?.data?.crime_short_code?.[0] ?? 'Create failed'}
+								</p>
+							)}
+						</div>
+					</form>
+				</div>
 			) : (
-				<p style={{ color: '#cbd5e1', marginBottom: 16 }}>You do not have permission to create categories.</p>
+				<div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-6">
+					<p className="text-yellow-800">You do not have permission to create categories.</p>
+				</div>
 			)}
 
-			{isLoading && <p>Loading...</p>}
-			{isError && <p style={{ color: '#fecaca' }}>Failed to load categories</p>}
+			{isLoading && (
+				<div className="bg-white shadow-md rounded-lg p-6 text-center">
+					<p className="text-gray-600">Loading...</p>
+				</div>
+			)}
+			{isError && (
+				<div className="bg-red-50 border border-red-200 rounded-lg p-4">
+					<p className="text-red-600">Failed to load categories</p>
+				</div>
+			)}
 			{data && (
 				<>
-					<div className="card">
-					<table width="100%" cellPadding={8} style={{ borderCollapse: 'collapse' }}>
-						<thead>
-							<tr>
-								<th align="left">ID</th>
-								<th align="left">Category</th>
-								<th align="left">Code</th>
-							</tr>
-						</thead>
-						<tbody>
-							{data.results.map((c) => (
-								<tr key={c.id} style={{ borderTop: '1px solid #eee' }}>
-									<td>{c.id}</td>
-									<td>{c.crime_category}</td>
-									<td>{c.crime_short_code}</td>
+					<div className="bg-white shadow-md rounded-lg overflow-hidden border border-gray-200">
+						<div className="p-4 bg-gray-50 border-b">
+							<h3 className="text-lg font-bold text-gray-800">Categories List</h3>
+							<p className="text-sm text-gray-600 mt-1">Total: {data.count || 0} categories</p>
+						</div>
+						<table className="w-full text-left table-bordered">
+							<thead>
+								<tr>
+									<th>ID</th>
+									<th>Category</th>
+									<th>Code</th>
 								</tr>
-							))}
-						</tbody>
-					</table>
+							</thead>
+							<tbody>
+								{data.results.map((c) => (
+									<tr key={c.id} className="transition-colors hover:bg-blue-50">
+										<td className="font-mono text-sm">{c.id}</td>
+										<td className="font-medium">{c.crime_category}</td>
+										<td className="font-mono text-sm text-primary">{c.crime_short_code}</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
 					</div>
-					<div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12 }}>
-						<button disabled={!data.previous || page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
+					<div className="flex items-center gap-4 mt-4">
+						<button 
+							disabled={!data.previous || page <= 1} 
+							onClick={() => setPage((p) => Math.max(1, p - 1))}
+							className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+						>
 							Prev
 						</button>
-						<span>Page {page}</span>
-						<button disabled={!data.next} onClick={() => setPage((p) => p + 1)}>
+						<span className="text-gray-700 font-medium">Page {page}</span>
+						<button 
+							disabled={!data.next} 
+							onClick={() => setPage((p) => p + 1)}
+							className="px-4 py-2 bg-gray-200 text-gray-700 rounded-md hover:bg-gray-300 transition-colors disabled:bg-gray-100 disabled:text-gray-400 disabled:cursor-not-allowed"
+						>
 							Next
 						</button>
-						{typeof data.count === 'number' && <span style={{ color: '#cbd5e1' }}>Total: {data.count}</span>}
+						{typeof data.count === 'number' && <span className="text-gray-600 text-sm">Total: {data.count}</span>}
 					</div>
 				</>
 			)}

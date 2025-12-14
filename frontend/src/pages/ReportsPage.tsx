@@ -1,14 +1,14 @@
 import { hasAnyRole, ROLES } from '../lib/roles'
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { createCrimeReport, listCrimeCategories, listCrimeReports, updateCrimeReport } from '../api/crime'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { listCrimeCategories, listCrimeReports, updateCrimeReport } from '../api/crime'
 import { API_BASE_URL } from '../api/axios'
 import { normalizeCountyName } from '../lib/normalizeCounty'
 import { subscribeAlerts, listSubscriptions, unsubscribeAlert } from '../api/alerts'
 import { showToast } from '../lib/toast'
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { resolveMediaUrl } from '../lib/media'
-import { MapContainer, TileLayer, Marker, useMapEvents, useMap } from 'react-leaflet'
-import { defaultMarkerIcon } from '../lib/leafletIcons'
+import { formatDate } from '../lib/dateFormat'
+import { formatLocation } from '../lib/locationFormat'
 import { useSearchParams, Link } from 'react-router-dom'
 
 export default function ReportsPage() {
@@ -102,163 +102,35 @@ export default function ReportsPage() {
         queryFn: () => listSubscriptions()
     })
 
-	// Form state
-	const [name_of_crime, setNameOfCrime] = useState('')
-	const [description, setDescription] = useState('')
-	const [location_name, setLocationName] = useState('')
-	const [location_description, setLocationDescription] = useState('')
-	const [county, setCounty] = useState('')
-	const [latitude, setLatitude] = useState<number | undefined>()
-	const [longitude, setLongitude] = useState<number | undefined>()
-	const [name_of_criminal, setNameOfCriminal] = useState('')
-	const [age, setAge] = useState<number | undefined>()
-	const [criminal_id_number, setCriminalIdNumber] = useState<number | undefined>()
-	const [date_of_arrest, setDateOfArrest] = useState('')
-	const [category_of_crime, setCategoryOfCrime] = useState<number | undefined>()
-	const [upload_criminal_photo_file, setUploadCriminalPhotoFile] = useState<File | undefined>()
-
-	const createMut = useMutation({
-		mutationFn: () => {
-			return createCrimeReport({
-				name_of_crime,
-				description: description || undefined,
-				location_name: location_name || undefined,
-				location_description: location_description || undefined,
-				latitude,
-				longitude,
-				name_of_criminal: name_of_criminal || undefined,
-				age,
-				criminal_id_number,
-				date_of_arrest: date_of_arrest || undefined,
-				category_of_crime: category_of_crime!,
-				upload_criminal_photo_file,
-				county: county || undefined
-			})
-		},
-		onSuccess: () => {
-			setNameOfCrime('')
-			setDescription('')
-			setLocationName('')
-			setLocationDescription('')
-			setNameOfCriminal('')
-			setAge(undefined)
-			setCriminalIdNumber(undefined)
-			setDateOfArrest('')
-			setCategoryOfCrime(undefined)
-			setUploadCriminalPhotoFile(undefined)
-			setLatitude(undefined)
-			setLongitude(undefined)
-			setCounty('')
-			queryClient.invalidateQueries({ queryKey: ['reports'] })
-			queryClient.invalidateQueries({ queryKey: ['neighborhood_alert_counts'] })
-			showToast('Report created', 'success')
-		}
-	})
-
-	function onCreate(e: FormEvent) {
-		e.preventDefault()
-		if (!category_of_crime) return
-		createMut.mutate()
-	}
-
-	async function reverseGeocode(lat: number, lng: number) {
-		try {
-			const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`
-			const res = await fetch(url, {
-				headers: {
-					'Accept': 'application/json'
-				}
-			})
-			if (!res.ok) return
-			const data = await res.json()
-			const displayName: string | undefined = data?.display_name
-			const addr = data?.address || {}
-			// Attempt to normalize Kenyan-like administrative hierarchy:
-			// sublocation ~ suburb/neighbourhood/village/ward/estate
-			const sublocation: string | undefined =
-				addr.suburb || addr.neighbourhood || addr.village || addr.ward || addr.hamlet || addr.quarter || addr.residential
-			// location ~ city/town/municipality/locality
-			const location: string | undefined =
-				addr.city || addr.town || addr.municipality || addr.locality || addr.county || addr.state_district
-			const countyVal: string | undefined = addr.county || addr.state
-
-			// Build concise "Sublocation, Location, County" where present
-			const parts = [sublocation, location, countyVal].filter(Boolean) as string[]
-			const concise = parts.length ? parts.join(', ') : 'Selected location'
-			setLocationName(concise)
-			// Keep full address (or coordinates) in description for reference
-			setLocationDescription(displayName ? displayName : `${lat}, ${lng}`)
-			if (countyVal) setCounty(countyVal)
-		} catch {
-			// Fallback to raw coordinates if reverse geocode fails
-			setLocationName('Selected location')
-			setLocationDescription(`${lat}, ${lng}`)
-		}
-	}
-
-	function useMyLocation() {
-		if (!navigator.geolocation) return
-		navigator.geolocation.getCurrentPosition(
-			async (pos) => {
-				const lat = Number(pos.coords.latitude.toFixed(6))
-				const lng = Number(pos.coords.longitude.toFixed(6))
-				setLatitude(lat)
-				setLongitude(lng)
-				await reverseGeocode(lat, lng)
-			},
-			() => {},
-			{ enableHighAccuracy: true, timeout: 8000 }
-		)
-	}
-
-	function ClickToSetMarker() {
-		useMapEvents({
-			click(e) {
-				const lat = Number(e.latlng.lat.toFixed(6))
-				const lng = Number(e.latlng.lng.toFixed(6))
-				setLatitude(lat)
-				setLongitude(lng)
-				// Also populate location name/description automatically
-				void reverseGeocode(lat, lng)
-			}
-		})
-		return null
-	}
-
-	const mapCenter: [number, number] = [
-		latitude ?? -1.286389, // Nairobi default
-		longitude ?? 36.817223
-	]
-	const KENYA_BOUNDS: [[number, number], [number, number]] = [[-4.7, 33.9], [5.5, 41.9]]
-
-	function FitKenyaMini() {
-		const map = useMap()
-		return (
-			<button
-				type="button"
-				onClick={() => map.fitBounds(KENYA_BOUNDS, { padding: [10, 10] })}
-				style={{ position: 'absolute', zIndex: 1000, right: 10, top: 10 }}
-			>
-				Zoom Kenya
-			</button>
-		)
-	}
-
-	// Backend allows: SuperAdmin, Admin, Dispatcher (when ENFORCE_ROLE_PERMS=True)
-	// Also allow FieldOfficer and Reporter in case ENFORCE_ROLE_PERMS=False
-	const canCreate = hasAnyRole([ROLES.Admin, ROLES.Dispatcher, ROLES.FieldOfficer, ROLES.Reporter, ROLES.SuperAdmin])
 	return (
-		<div>
-			<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-				<h2 style={{ margin: 0 }}>Crime Reports</h2>
-				<span style={{ fontSize: 12, padding: '6px 10px', borderRadius: 999, border: usedPublic ? '1px solid rgba(251,191,36,0.4)' : '1px solid rgba(16,185,129,0.35)', background: usedPublic ? 'rgba(251,191,36,0.15)' : 'rgba(16,185,129,0.12)', color: '#e5e7eb' }}>
-					{usedPublic ? 'Public Data' : 'Private Data'}
-				</span>
+		<div className="space-y-6">
+			<div className="bg-gradient-to-r from-primary to-secondary text-white rounded-lg shadow-lg p-6 mb-6">
+				<div className="flex justify-between items-center">
+					<div>
+						<h2 className="text-3xl font-bold mb-2">Crime Reports</h2>
+						<p className="text-gray-100 text-sm">View and manage crime reports. Use filters to find specific incidents.</p>
+					</div>
+					<span className="text-sm px-4 py-2 rounded-full border border-white border-opacity-30 bg-white bg-opacity-10">
+						{usedPublic ? 'Public Data' : 'Private Data'}
+					</span>
+				</div>
 			</div>
 
-		<div className="card mb-3"><div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-			<input placeholder="Search..." value={search} onChange={(e) => setSearch(e.target.value)} />
-				<select value={ordering} onChange={(e) => setOrdering(e.target.value)}>
+		<div className="bg-white rounded-lg shadow-md border border-gray-200 p-4 mb-3">
+			<div className="flex flex-wrap gap-3 items-center">
+				<div className="flex-1 min-w-[200px]">
+					<input 
+						placeholder="Search..." 
+						value={search} 
+						onChange={(e) => setSearch(e.target.value)}
+						className="w-full px-4 py-2 bg-blue-50 text-blue-900 border border-blue-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent placeholder-blue-400"
+					/>
+				</div>
+				<select 
+					value={ordering} 
+					onChange={(e) => setOrdering(e.target.value)}
+					className="px-4 py-2 bg-purple-100 text-purple-700 border border-purple-300 rounded-lg font-medium hover:bg-purple-200 focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-colors shadow-sm"
+				>
 					<option value="-date_updated">Newest</option>
 					<option value="date_updated">Oldest</option>
 					<option value="age">Age asc</option>
@@ -280,10 +152,27 @@ export default function ReportsPage() {
 						}
 						setSearchParams(newParams)
 					}} 
+					className="px-4 py-2 bg-indigo-50 text-indigo-900 border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent placeholder-indigo-400"
 				/>
-				<input placeholder="Min age" type="number" value={ageMin ?? ''} onChange={(e) => setAgeMin(e.target.value ? Number(e.target.value) : undefined)} />
-				<input placeholder="Max age" type="number" value={ageMax ?? ''} onChange={(e) => setAgeMax(e.target.value ? Number(e.target.value) : undefined)} />
-				<select value={categoryId ?? ''} onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}>
+				<input 
+					placeholder="Min age" 
+					type="number" 
+					value={ageMin ?? ''} 
+					onChange={(e) => setAgeMin(e.target.value ? Number(e.target.value) : undefined)}
+					className="px-4 py-2 bg-green-50 text-green-900 border border-green-200 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent placeholder-green-400 w-24"
+				/>
+				<input 
+					placeholder="Max age" 
+					type="number" 
+					value={ageMax ?? ''} 
+					onChange={(e) => setAgeMax(e.target.value ? Number(e.target.value) : undefined)}
+					className="px-4 py-2 bg-teal-50 text-teal-900 border border-teal-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:border-transparent placeholder-teal-400 w-24"
+				/>
+				<select 
+					value={categoryId ?? ''} 
+					onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : undefined)}
+					className="px-4 py-2 bg-orange-100 text-orange-700 border border-orange-300 rounded-lg font-medium hover:bg-orange-200 focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-colors shadow-sm min-w-[180px]"
+				>
 					<option value="">All categories</option>
 					{categoriesQuery.data?.results.map((c) => (
 						<option key={c.id} value={c.id}>
@@ -291,82 +180,55 @@ export default function ReportsPage() {
 						</option>
 					))}
 				</select>
-			<button onClick={() => { setPage(1); reportsQuery.refetch() }}>Apply</button>
+				<button 
+					onClick={() => { setPage(1); reportsQuery.refetch() }}
+					className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:bg-secondary transition-colors shadow-sm flex items-center gap-2"
+				>
+					<svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+						<path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+					</svg>
+					Apply
+				</button>
 			{countyFilter && (
 				<>
 					{(subscriptionsQuery.data?.results || []).some((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase()) ? (
-						<button onClick={async () => { const sub = (subscriptionsQuery.data!.results.find((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase())!); await unsubscribeAlert(sub.id); showToast('Unsubscribed from county', 'success'); subscriptionsQuery.refetch() }}>Unfollow county</button>
+						<button 
+							onClick={async () => { const sub = (subscriptionsQuery.data!.results.find((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase())!); await unsubscribeAlert(sub.id); showToast('Unsubscribed from county', 'success'); subscriptionsQuery.refetch() }}
+							className="px-4 py-2 bg-red-100 text-red-700 border border-red-300 rounded-lg font-medium hover:bg-red-200 transition-colors shadow-sm"
+						>
+							Unfollow county
+						</button>
 					) : (
-						<button onClick={async () => { await subscribeAlerts({ county: countyFilter, channel: 'sms' }); showToast('Subscribed to county alerts', 'success'); subscriptionsQuery.refetch() }}>Follow county</button>
+						<button 
+							onClick={async () => { await subscribeAlerts({ county: countyFilter, channel: 'sms' }); showToast('Subscribed to county alerts', 'success'); subscriptionsQuery.refetch() }}
+							className="px-4 py-2 bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg font-medium hover:bg-emerald-200 transition-colors shadow-sm"
+						>
+							Follow county
+						</button>
 					)}
 				</>
 			)}
 			{countyFilter && (
 				<>
 					{(subscriptionsQuery.data?.results || []).some((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase()) ? (
-						<button onClick={async () => { const sub = (subscriptionsQuery.data!.results.find((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase())!); await unsubscribeAlert(sub.id); showToast('Unsubscribed from county', 'success'); subscriptionsQuery.refetch() }}>Unfollow county</button>
+						<button 
+							onClick={async () => { const sub = (subscriptionsQuery.data!.results.find((s) => (s.county || '')?.toLowerCase() === countyFilter.toLowerCase())!); await unsubscribeAlert(sub.id); showToast('Unsubscribed from county', 'success'); subscriptionsQuery.refetch() }}
+							className="px-4 py-2 bg-red-100 text-red-700 border border-red-300 rounded-lg font-medium hover:bg-red-200 transition-colors shadow-sm"
+						>
+							Unfollow county
+						</button>
 					) : (
-						<button onClick={async () => { await subscribeAlerts({ county: countyFilter, channel: 'sms' }); showToast('Subscribed to county alerts', 'success'); subscriptionsQuery.refetch() }}>Follow county</button>
+						<button 
+							onClick={async () => { await subscribeAlerts({ county: countyFilter, channel: 'sms' }); showToast('Subscribed to county alerts', 'success'); subscriptionsQuery.refetch() }}
+							className="px-4 py-2 bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-lg font-medium hover:bg-emerald-200 transition-colors shadow-sm"
+						>
+							Follow county
+						</button>
 					)}
 				</>
 			)}
 		</div>
 		<small style={{ color: '#cbd5e1', display: 'block', marginTop: -8, marginBottom: 0 }}>County accepts aliases like "Kajiado" or full "Kajiado County".</small></div>
-
-			{canCreate ? (
-			<div className="card mb-3"><form onSubmit={onCreate} style={{ display: 'grid', gap: 8, maxWidth: 640 }}>
-				<input required name="name_of_crime" placeholder="Name of crime" value={name_of_crime} onChange={(e) => setNameOfCrime(e.target.value)} />
-				<textarea name="description" placeholder="Description of events" value={description} onChange={(e) => setDescription(e.target.value)} rows={4} />
-				<input name="location_name" placeholder="Location name" value={location_name} onChange={(e) => setLocationName(e.target.value)} />
-				<input name="location_description" placeholder="Location description" value={location_description} onChange={(e) => setLocationDescription(e.target.value)} />
-				<input name="county" placeholder="County" value={county} onChange={(e) => setCounty(e.target.value)} />
-				<div style={{ display: 'flex', gap: 8 }}>
-					<input name="latitude" style={{ flex: 1 }} placeholder="Latitude (-90 to 90)" type="number" step="0.000001" value={latitude ?? ''} onChange={(e) => setLatitude(e.target.value ? Number(e.target.value) : undefined)} />
-					<input name="longitude" style={{ flex: 1 }} placeholder="Longitude (-180 to 180)" type="number" step="0.000001" value={longitude ?? ''} onChange={(e) => setLongitude(e.target.value ? Number(e.target.value) : undefined)} />
-				</div>
-				<div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-					<button type="button" onClick={useMyLocation}>Use my location</button>
-					<small>or click on the map to set position</small>
-				</div>
-				<div style={{ height: 300, width: '100%', border: '1px solid rgba(255,255,255,0.18)', borderRadius: 12, overflow: 'hidden', position: 'relative', background: 'rgba(17,24,39,0.6)' }}>
-					<MapContainer center={mapCenter} zoom={7} style={{ height: '100%', width: '100%' }}>
-						<FitKenyaMini />
-						<TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; OpenStreetMap contributors' />
-						<ClickToSetMarker />
-						{latitude !== undefined && longitude !== undefined && (
-							<Marker position={[latitude, longitude]} icon={defaultMarkerIcon} />
-						)}
-					</MapContainer>
-				</div>
-				<input name="name_of_criminal" placeholder="Name of criminal" value={name_of_criminal} onChange={(e) => setNameOfCriminal(e.target.value)} />
-				<input name="age" placeholder="Age" type="number" value={age ?? ''} onChange={(e) => setAge(e.target.value ? Number(e.target.value) : undefined)} />
-				<input name="criminal_id_number" placeholder="Criminal ID Number" type="number" value={criminal_id_number ?? ''} onChange={(e) => setCriminalIdNumber(e.target.value ? Number(e.target.value) : undefined)} />
-				<input name="date_of_arrest" placeholder="Date of arrest (YYYY-MM-DD)" type="date" value={date_of_arrest} onChange={(e) => setDateOfArrest(e.target.value)} />
-				<input name="upload_criminal_photo" type="file" accept="image/*" onChange={(e) => setUploadCriminalPhotoFile(e.target.files?.[0])} />
-				<select required name="category_of_crime" value={category_of_crime ?? ''} onChange={(e) => setCategoryOfCrime(e.target.value ? Number(e.target.value) : undefined)}>
-					<option value="" disabled>
-						Select category
-					</option>
-					{categoriesQuery.data?.results.map((c) => (
-						<option key={c.id} value={c.id}>
-							{c.crime_category}
-						</option>
-					))}
-				</select>
-				<button type="submit" disabled={createMut.isPending}>
-					Create Report
-				</button>
-				{createMut.isError && (
-				<p style={{ color: '#fecaca' }}>
-						{(createMut.error as any)?.response?.data
-							? JSON.stringify((createMut.error as any).response.data)
-							: 'Create failed'}
-					</p>
-				)}
-			</form></div>
-			) : (
-				<p style={{ color: '#666', marginBottom: 16 }}>You do not have permission to create reports.</p>
-			)}
 
 			{reportsQuery.isLoading && <p>Loading...</p>}
 			{reportsQuery.isError && (
@@ -391,55 +253,59 @@ export default function ReportsPage() {
 							</div>
 						</div>
 					)}
-					<div className="card" style={{ overflowX: 'auto', width: '100%' }}>
-						<table style={{ minWidth: '800px' }}>
+					<div className="bg-white shadow-md rounded-lg overflow-hidden" style={{ overflowX: 'auto', width: '100%' }}>
+						<div className="p-4 bg-gray-50 border-b">
+							<h3 className="text-lg font-bold text-gray-800">Crime Reports</h3>
+							<p className="text-sm text-gray-600 mt-1">Total: {reportsQuery.data.count || 0} reports</p>
+						</div>
+						<table className="table-bordered" style={{ minWidth: '800px' }}>
 							<thead>
 								<tr>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Photo</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>OB Number</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Crime</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Suspect</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Category</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Description</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Location</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Age</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Arrest Date</th>
-									<th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Updated</th>
-									{hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) && <th align="left" style={{ padding: '12px 8px', fontWeight: '600' }}>Moderate</th>}
+									<th>Photo</th>
+									<th>OB Number</th>
+									<th>Crime</th>
+									<th>Suspect</th>
+									<th>Category</th>
+									<th>Description</th>
+									<th>Location</th>
+									<th>Age</th>
+									<th>Arrest Date</th>
+									<th>Updated</th>
+									{hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) && <th>Moderate</th>}
 								</tr>
 							</thead>
 							<tbody>
 								{reportsQuery.data.results.length === 0 ? (
 									<tr>
-										<td colSpan={hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) ? 11 : 10} style={{ textAlign: 'center', padding: '40px', color: '#cbd5e1' }}>
+										<td colSpan={hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) ? 11 : 10} className="text-center py-10 text-gray-500">
 											No reports found
 										</td>
 									</tr>
 								) : (
 						reportsQuery.data.results.map((r: any) => (
-										<tr key={r.id} style={{ borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-											<td style={{ padding: '8px' }}>
+										<tr key={r.id} className="transition-colors hover:bg-blue-50">
+											<td>
 												{r.upload_criminal_photo ? (
 													<img
 														src={resolveMediaUrl(r.upload_criminal_photo) as string}
 														alt="criminal"
-														style={{ width: 48, height: 48, objectFit: 'cover', borderRadius: 4 }}
+														className="w-12 h-12 object-cover rounded"
 													/>
 												) : (
-													<span style={{ color: '#888' }}>—</span>
+													<span className="text-gray-400">—</span>
 												)}
 											</td>
-											<td style={{ padding: '8px' }}>{r.occurance_book_number}</td>
-											<td style={{ padding: '8px' }}>{r.name_of_crime}</td>
-											<td style={{ padding: '8px' }}>{r.name_of_criminal ?? '-'}</td>
-											<td style={{ padding: '8px' }}>{r.category_of_crime_name}</td>
-											<td style={{ padding: '8px', maxWidth: '200px' }}>{r.description ? r.description.slice(0, 80) + (r.description.length > 80 ? '…' : '') : '-'}</td>
-											<td style={{ padding: '8px' }}>{r.location_name ?? (r.county ?? '-')}</td>
-											<td style={{ padding: '8px' }}>{r.age ?? '-'}</td>
-											<td style={{ padding: '8px' }}>{r.date_of_arrest ?? '-'}</td>
-											<td style={{ padding: '8px' }}>{new Date(r.date_updated).toLocaleString()}</td>
+											<td className="font-mono text-sm">{r.occurance_book_number}</td>
+											<td className="font-medium">{r.name_of_crime}</td>
+											<td>{r.name_of_criminal ?? '-'}</td>
+											<td className="text-sm">{r.category_of_crime_name}</td>
+											<td className="text-sm max-w-xs truncate" title={r.description}>{r.description ? r.description.slice(0, 80) + (r.description.length > 80 ? '…' : '') : '-'}</td>
+											<td className="text-sm">{formatLocation(r.location_name, r.county, undefined, r.latitude, r.longitude)}</td>
+											<td>{r.age ?? '-'}</td>
+											<td className="text-sm">{r.date_of_arrest ?? '-'}</td>
+											<td className="text-sm text-gray-600">{formatDate(r.date_updated)}</td>
 											{hasAnyRole([ROLES.SuperAdmin, ROLES.Admin, ROLES.Dispatcher]) && (
-												<td style={{ padding: '8px' }}>
+												<td>
 						<RowModeration id={r.id} currentStatus={(r as any).status} currentSeverity={(r as any).severity} onSaved={() => { queryClient.invalidateQueries({ queryKey: ['neighborhood_alert_counts'] }); reportsQuery.refetch() }} />
 												</td>
 											)}
@@ -488,20 +354,51 @@ function RowModeration({ id, currentStatus, currentSeverity, onSaved }: { id: nu
 		}
 	}
 
+	const getSeverityColor = (sev: string) => {
+		const s = sev.toLowerCase()
+		if (s === 'low') return 'text-emerald-700 bg-emerald-50 border-emerald-300'
+		if (s === 'medium') return 'text-amber-700 bg-amber-50 border-amber-300'
+		if (s === 'high') return 'text-red-700 bg-red-50 border-red-300'
+		if (s === 'critical') return 'text-violet-700 bg-violet-50 border-violet-300'
+		return 'text-gray-700 bg-gray-50 border-gray-300'
+	}
+
 	return (
-		<div className="row">
-			<select value={status} onChange={(e) => setStatus(e.target.value)}>
+		<div className="flex flex-col gap-2 min-w-[200px]">
+			<div className="flex gap-2">
+				<div className="flex-1">
+					<label className="block text-xs font-medium text-gray-600 mb-1">Status</label>
+					<select 
+						value={status} 
+						onChange={(e) => setStatus(e.target.value)}
+						className="w-full px-2 py-1.5 text-sm border border-gray-300 rounded-md focus:ring-2 focus:ring-primary focus:border-transparent bg-white"
+					>
 				{STATUS_OPTIONS.map((s) => (
-					<option key={s} value={s}>{s}</option>
+							<option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
 				))}
 			</select>
-			<select value={severity} onChange={(e) => setSeverity(e.target.value)}>
+				</div>
+				<div className="flex-1">
+					<label className="block text-xs font-medium text-gray-600 mb-1">Severity</label>
+					<select 
+						value={severity} 
+						onChange={(e) => setSeverity(e.target.value)}
+						className={`w-full px-2 py-1.5 text-sm border rounded-md focus:ring-2 focus:ring-primary focus:border-transparent bg-white ${getSeverityColor(severity)}`}
+					>
 				{SEVERITY_OPTIONS.map((s) => (
-					<option key={s} value={s}>{s}</option>
+							<option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
 				))}
 			</select>
-			<button onClick={save} disabled={saving}>Save</button>
-			{err && <small style={{ color: 'crimson' }}>{err}</small>}
+				</div>
+			</div>
+			<button 
+				onClick={save} 
+				disabled={saving}
+				className="px-3 py-1.5 text-sm bg-primary text-white rounded-md hover:bg-secondary transition-colors font-medium disabled:bg-gray-400 disabled:cursor-not-allowed"
+			>
+				{saving ? 'Saving...' : 'Save'}
+			</button>
+			{err && <small className="text-red-600 text-xs">{err}</small>}
 		</div>
 	)
 }
