@@ -202,6 +202,7 @@ _cors_origins = os.getenv('CORS_ALLOWED_ORIGINS', '')
 CORS_ALLOWED_ORIGINS = [o.strip() for o in _cors_origins.split(',') if o.strip()]
 CORS_ALLOW_HEADERS = list(default_headers) + [
     'if-none-match',
+    'x-session-id',  # Allow X-Session-ID header for anonymous session tracking
 ]
 
 # Role permissions enforcement (set to True in production to enforce group-based perms)
